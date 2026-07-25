@@ -35,7 +35,7 @@ fn main() {
     #[cfg(not(target_os = "macos"))]
     {
         let _ = config_path;
-        eprintln!("keys-layer currently supports macOS only (CGEvent tap).");
+        eprintln!("keys-layer currently supports macOS only (DriverKit).");
         process::exit(1);
     }
 }

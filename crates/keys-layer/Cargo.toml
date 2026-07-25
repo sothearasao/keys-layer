@@ -3,7 +3,7 @@ name = "keys-layer"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Simple hold-to-layer keyboard remapper (macOS CGEvent tap)"
+description = "Simple hold-to-layer keyboard remapper (macOS DriverKit / Karabiner VirtualHID)"
 
 [[bin]]
 name = "keys-layer"
@@ -13,5 +13,8 @@ path = "src/main.rs"
 keys-layer-core = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-core-foundation = "0.10"
+# 0.3.x matches Karabiner-Elements' bundled VirtualHID daemon (~6.x).
+# 0.4.x requires standalone VirtualHIDDevice v8.0.0 (protocol 7) and will
+# fail with connect_failed asio.system:2 against KE's daemon.
+karabiner-driverkit = "=0.3.0"
 libc = "0.2"

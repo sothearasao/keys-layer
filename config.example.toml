@@ -8,7 +8,7 @@ hold_ms = 150
 f = { tap = "f", hold = "mod_f" }
 caps = { hold = "mod_caps", native = "disable", hold_ms = 100 }
 
-# While mod_f is active: J → Delete (tap = one delete, hold = repeating delete).
+# While mod_f is active: J → Delete (tap = one delete; hold = repeating delete).
 [layer.mod_f]
 j = { key = "delete" }
 # same as: j = "delete"

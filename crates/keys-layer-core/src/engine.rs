@@ -89,15 +89,14 @@ impl Engine {
 
     /// Whether the backend should swallow this physical key and route it through the engine.
     pub fn should_intercept(&self, key: &KeyName) -> bool {
-        // While undecided on a hold, intercept *all* keys so we can emit the
-        // pending tap before the next key (preserves "fe" order when typing fast).
-        if self.pending.is_some() {
+        // While a hold is undecided *or* a momentary layer is active, intercept
+        // *all* keys. Mixing passthrough + engine for the same physical key
+        // (down via passthrough, up while pending) swallows the KeyUp and the
+        // OS keeps the key stuck — later presses look like "dropped" keys.
+        if self.pending.is_some() || !self.active_holds.is_empty() {
             return true;
         }
         if self.resolved_while_held.contains(key) {
-            return true;
-        }
-        if self.active_holds.iter().any(|h| &h.physical == key) {
             return true;
         }
         // If we already mapped this physical key down, we must see the up.
@@ -242,8 +241,15 @@ impl Engine {
             return self.leave_hold_for(&key);
         }
 
-        // Normal release of a remapped / passthrough key.
-        self.release_output(&key)
+        // Normal release of a remapped / engine-passthrough key.
+        if self.physical_to_output.contains_key(&key) {
+            return self.release_output(&key);
+        }
+
+        // Never saw KeyDown through the engine (key was already held when we
+        // started intercepting, e.g. rolled into a pending hold). Still emit
+        // KeyUp so the OS does not keep the key stuck.
+        vec![OutputEvent::KeyUp(key)]
     }
 
     /// Resolve undecided hold as a tap (key still physically held).
@@ -471,5 +477,28 @@ mod tests {
 
         let out = eng.handle(InputEvent::KeyUp(KeyName::new("j")), 400);
         assert_eq!(out, vec![OutputEvent::KeyUp(KeyName::new("delete"))]);
+    }
+
+    #[test]
+    fn key_up_without_engine_down_still_emits_up() {
+        // Rolled into a pending hold: key was already down via passthrough,
+        // then KeyUp arrives while we intercept — must not swallow it.
+        let mut eng = demo_engine();
+        eng.handle(InputEvent::KeyDown(KeyName::new("f")), 0);
+        let out = eng.handle(InputEvent::KeyUp(KeyName::new("e")), 10);
+        assert_eq!(out, vec![OutputEvent::KeyUp(KeyName::new("e"))]);
+    }
+
+    #[test]
+    fn active_hold_passes_unbound_keys_through_engine() {
+        let mut eng = demo_engine();
+        eng.handle(InputEvent::KeyDown(KeyName::new("f")), 0);
+        assert!(eng.tick(200).is_empty());
+        assert!(eng.should_intercept(&KeyName::new("a")));
+
+        let out = eng.handle(InputEvent::KeyDown(KeyName::new("a")), 250);
+        assert_eq!(out, vec![OutputEvent::KeyDown(KeyName::new("a"))]);
+        let out = eng.handle(InputEvent::KeyUp(KeyName::new("a")), 260);
+        assert_eq!(out, vec![OutputEvent::KeyUp(KeyName::new("a"))]);
     }
 }

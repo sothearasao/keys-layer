@@ -147,31 +147,29 @@ pub fn run(config_path: &Path) -> Result<(), String> {
         };
 
         let now_ms = started.elapsed().as_millis() as u64;
-        let intercept = {
-            let eng = engine.lock().expect("engine lock");
-            eng.should_intercept(&key) || eng.is_native_disabled(&key)
-        };
-
-        if !intercept {
-            passthrough(&mut event);
-            continue;
-        }
-
-        if key.as_str() == "caps_lock" {
-            caps_lock::force_caps_lock_off();
-        }
-
         let input = match event.value {
-            VALUE_RELEASE => InputEvent::KeyUp(key),
-            VALUE_PRESS | VALUE_REPEAT => InputEvent::KeyDown(key),
+            VALUE_RELEASE => InputEvent::KeyUp(key.clone()),
+            VALUE_PRESS | VALUE_REPEAT => InputEvent::KeyDown(key.clone()),
             _ => continue,
         };
 
+        // Single lock: decide intercept + handle without racing the tick thread.
         let outputs = {
             let mut eng = engine.lock().expect("engine lock");
-            eng.handle(input, now_ms)
+            if !(eng.should_intercept(&key) || eng.is_native_disabled(&key)) {
+                None
+            } else {
+                if key.as_str() == "caps_lock" {
+                    caps_lock::force_caps_lock_off();
+                }
+                Some(eng.handle(input, now_ms))
+            }
         };
-        emit_outputs(&outputs);
+
+        match outputs {
+            None => passthrough(&mut event),
+            Some(outputs) => emit_outputs(&outputs),
+        }
     }
 }
 

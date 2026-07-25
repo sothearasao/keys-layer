@@ -2,7 +2,7 @@
 
 How to write and load a `keys-layer` config.
 
-Related docs: [README](./README.md) · [installation](./installation.md) · [config.example.toml](./config.example.toml)
+Related docs: [README](./README.md) · [prerequisite](./prerequisite.md) · [installation](./installation.md) · [autostart](./autostart.md) · [uninstall](./uninstall.md) · [config.example.toml](./config.example.toml)
 
 ## Where the config lives
 
@@ -47,12 +47,18 @@ Hold a key past `hold_ms` → enter another layer (momentary). Release → retur
 [settings]
 hold_ms = 200
 base_layer = "base"
+# devices = ["Moonlander"]           # optional: seize only this board
+f_row_media_devices = ["Apple Internal"]  # Fn-aware F-row media (default)
 ```
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `hold_ms` | integer (ms) | `200` | Global hold delay when a layer/key does not set its own |
 | `base_layer` | string | `"base"` | Layer active when the program starts (must exist) |
+| `devices` | string array | `[]` (all keyboards) | Product-name substrings to seize; empty = all |
+| `f_row_media_devices` | string array | `["Apple Internal"]` | Only these keyboards get Mac-style F1–F12 ↔ media (Fn/Globe + System Settings). Other boards keep real F-keys. Set `[]` to disable. |
+
+On matching devices, F1–F12 follow macOS: media by default, real F-keys while holding **Fn** / **Globe** (inverted if “Use F1, F2… as standard function keys” is on). F3/F4 stay as F-keys (no stable VirtualHID Mission Control / Spotlight).
 
 ---
 

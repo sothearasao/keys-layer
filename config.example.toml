@@ -1,6 +1,12 @@
 [settings]
 # Global fallback when a layer/key does not set hold_ms.
 hold_ms = 200
+# Optional: only seize these keyboards (product-name substring).
+# Empty / omitted = all keyboards.
+# devices = ["Moonlander"]
+# Mac-style F1–F12 ↔ media (respects Fn/Globe + System Settings).
+# Only these product-name substrings get it — Moonlander keeps real F-keys.
+f_row_media_devices = ["Apple Internal"]
 
 # Hold F → mod_f. Hold Caps → mod_caps (vim arrows).
 [layer.base]
@@ -11,9 +17,8 @@ caps = { hold = "mod_caps", native = "disable", hold_ms = 100 }
 # While mod_f is active: J → Delete (tap = one delete; hold = repeating delete).
 [layer.mod_f]
 j = { key = "delete" }
-# same as: j = "delete"
 
-# While mod_caps is active: hjkl → arrows (vim style); hold an arrow to keep moving.
+# While mod_caps is active: hjkl → arrows (vim style).
 [layer.mod_caps]
 h = "left"
 j = "down"

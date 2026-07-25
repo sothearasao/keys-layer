@@ -3,6 +3,14 @@
 use keys_layer_core::KeyName;
 
 pub const PAGE_KEYBOARD: u32 = 0x07;
+pub const PAGE_CONSUMER: u32 = 0x0C;
+/// Apple Vendor Top Case (Fn, brightness, keyboard illumination).
+pub const PAGE_APPLE_TOP_CASE: u32 = 0xFF;
+/// Apple Vendor Keyboard (Globe / emoji key on newer Macs).
+pub const PAGE_APPLE_VENDOR_KEYBOARD: u32 = 0xFF01;
+
+pub const USAGE_APPLE_FN: u32 = 0x03;
+pub const USAGE_APPLE_GLOBE: u32 = 0x05;
 
 /// Map KeyName → HID usage (keyboard page).
 pub fn key_name_to_usage(name: &KeyName) -> Option<u32> {
@@ -53,6 +61,8 @@ pub fn key_name_to_usage(name: &KeyName) -> Option<u32> {
         "left_bracket" | "[" => 0x2F,
         "right_bracket" | "]" => 0x30,
         "backslash" | "\\" => 0x31,
+        // ISO extra keys (ANSI boards usually never send these).
+        "non_us_pound" | "non_us_hash" | "nuhs" => 0x32,
         "semicolon" | ";" => 0x33,
         "quote" | "'" => 0x34,
         "grave" | "`" => 0x35,
@@ -85,6 +95,7 @@ pub fn key_name_to_usage(name: &KeyName) -> Option<u32> {
         "left" => 0x50,
         "down" => 0x51,
         "up" => 0x52,
+        "non_us_backslash" | "nubs" => 0x64,
         "left_control" => 0xE0,
         "left_shift" => 0xE1,
         "left_alt" => 0xE2,
@@ -145,6 +156,7 @@ pub fn usage_to_key_name(usage: u32) -> Option<KeyName> {
         0x2F => "left_bracket",
         0x30 => "right_bracket",
         0x31 => "backslash",
+        0x32 => "non_us_pound",
         0x33 => "semicolon",
         0x34 => "quote",
         0x35 => "grave",
@@ -173,6 +185,7 @@ pub fn usage_to_key_name(usage: u32) -> Option<KeyName> {
         0x50 => "left",
         0x51 => "down",
         0x52 => "up",
+        0x64 => "non_us_backslash",
         0xE0 => "left_control",
         0xE1 => "left_shift",
         0xE2 => "left_alt",

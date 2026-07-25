@@ -33,6 +33,11 @@ pub struct Settings {
     /// Global default hold delay; used when a layer/key does not set `hold_ms`.
     pub hold_ms: u64,
     pub base_layer: String,
+    /// Product-name substrings of keyboards to seize. Empty = all keyboards.
+    pub devices: Vec<String>,
+    /// Product-name substrings that get Mac-style F1–F12 ↔ media (Fn/Globe).
+    /// Default: `["Apple Internal"]`. Empty disables the feature.
+    pub f_row_media_devices: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -82,6 +87,12 @@ struct RawSettings {
     hold_ms: u64,
     #[serde(default = "default_base_layer")]
     base_layer: String,
+    /// Keyboards to seize (product-name substrings). Empty = all.
+    #[serde(default)]
+    devices: Vec<String>,
+    /// Devices that get Fn-aware F-row media (default: Apple Internal).
+    #[serde(default = "default_f_row_media_devices")]
+    f_row_media_devices: Vec<String>,
 }
 
 impl Default for RawSettings {
@@ -89,6 +100,8 @@ impl Default for RawSettings {
         Self {
             hold_ms: DEFAULT_HOLD_MS,
             base_layer: DEFAULT_BASE_LAYER.to_string(),
+            devices: Vec::new(),
+            f_row_media_devices: default_f_row_media_devices(),
         }
     }
 }
@@ -99,6 +112,10 @@ fn default_hold_ms() -> u64 {
 
 fn default_base_layer() -> String {
     DEFAULT_BASE_LAYER.to_string()
+}
+
+fn default_f_row_media_devices() -> Vec<String> {
+    vec!["Apple Internal".into()]
 }
 
 /// One layer table: optional `hold_ms`, plus key bindings flattened in.
@@ -198,6 +215,8 @@ impl Config {
             settings: Settings {
                 hold_ms: raw.settings.hold_ms,
                 base_layer: raw.settings.base_layer,
+                devices: raw.settings.devices,
+                f_row_media_devices: raw.settings.f_row_media_devices,
             },
             layers,
         })

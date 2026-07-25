@@ -15,8 +15,12 @@ Inspired by [Kanata](https://github.com/jtroo/kanata), but focused on a small fe
 
 ## Quick start
 
-See **[installation.md](./installation.md)** for full setup (driver, permissions, `sudo`).  
-See **[configuration.md](./configuration.md)** for the full TOML reference.
+1. **[prerequisite.md](./prerequisite.md)** — driver, permissions, quit Karabiner remapping  
+2. **[installation.md](./installation.md)** — build, config, run  
+3. **[autostart.md](./autostart.md)** — optional LaunchDaemon (start at login)  
+4. **[configuration.md](./configuration.md)** — TOML reference  
+
+To remove everything: **[uninstall.md](./uninstall.md)**
 
 ```bash
 # after install

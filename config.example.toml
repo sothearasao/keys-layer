@@ -1,0 +1,21 @@
+[settings]
+# Global fallback when a layer/key does not set hold_ms.
+hold_ms = 200
+
+# Hold F → mod_f. Hold Caps → mod_caps (vim arrows).
+[layer.base]
+hold_ms = 150
+f = { tap = "f", hold = "mod_f" }
+caps = { hold = "mod_caps", native = "disable", hold_ms = 100 }
+
+# While mod_f is active: J → Delete (tap = one delete, hold = repeating delete).
+[layer.mod_f]
+j = { key = "delete" }
+# same as: j = "delete"
+
+# While mod_caps is active: hjkl → arrows (vim style); hold an arrow to keep moving.
+[layer.mod_caps]
+h = "left"
+j = "down"
+k = "up"
+l = "right"

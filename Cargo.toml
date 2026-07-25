@@ -1,0 +1,14 @@
+[workspace]
+resolver = "2"
+members = ["crates/keys-layer-core", "crates/keys-layer"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+keys-layer-core = { path = "crates/keys-layer-core" }
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+thiserror = "2"

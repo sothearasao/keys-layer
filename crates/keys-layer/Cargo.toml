@@ -1,0 +1,17 @@
+[package]
+name = "keys-layer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Simple hold-to-layer keyboard remapper (macOS CGEvent tap)"
+
+[[bin]]
+name = "keys-layer"
+path = "src/main.rs"
+
+[dependencies]
+keys-layer-core = { workspace = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation = "0.10"
+libc = "0.2"

@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 
-use crate::config::{Config, KeyBinding};
+use crate::config::{Config, KeyBinding, NativeMode};
 use crate::key::KeyName;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -189,9 +189,16 @@ impl Engine {
                 tap,
                 hold,
                 hold_ms,
-                native: _,
+                native,
             }) => {
                 let ms = self.config.resolve_hold_ms(&layer, hold_ms);
+                // native = "enable" (default) + no tap → fire the physical key on
+                // quick release. native = "disable" → silence unless tap is set.
+                let tap = match (tap, native) {
+                    (Some(t), _) => Some(t),
+                    (None, NativeMode::Enable) => Some(key.clone()),
+                    (None, NativeMode::Disable) => None,
+                };
                 self.pending = Some(PendingHold {
                     physical: key,
                     tap,
@@ -458,6 +465,33 @@ mod tests {
         assert_eq!(eng.current_layer(), "mod_caps");
         let out = eng.handle(InputEvent::KeyDown(KeyName::new("h")), 350);
         assert_eq!(out, vec![OutputEvent::KeyDown(KeyName::new("left"))]);
+    }
+
+    #[test]
+    fn native_enable_hold_only_taps_physical_key() {
+        let cfg = Config::from_toml_str(
+            r#"
+            [layer.base]
+            caps = { hold = "mod_caps", hold_ms = 100 }
+
+            [layer.mod_caps]
+            h = "left"
+            "#,
+        )
+        .unwrap();
+        let mut eng = Engine::new(cfg);
+
+        eng.handle(InputEvent::KeyDown(KeyName::new("caps")), 0);
+        // native defaults to enable → quick release fires caps_lock.
+        let out = eng.handle(InputEvent::KeyUp(KeyName::new("caps")), 40);
+        assert_eq!(
+            out,
+            vec![
+                OutputEvent::KeyDown(KeyName::new("caps_lock")),
+                OutputEvent::KeyUp(KeyName::new("caps_lock")),
+            ]
+        );
+        assert_eq!(eng.current_layer(), "base");
     }
 
     #[test]

@@ -135,14 +135,24 @@ caps = { tap = "escape", hold = "mod_caps", native = "disable", hold_ms = 100 }
 
 If another key is pressed **before** `hold_ms`, the pending hold key is resolved as a **tap** first (so rolls like `fe` stay in order instead of becoming `ef`).
 
-#### `native = "disable"`
+#### `native`
 
-Never fire the physical key. Use this for **Caps Lock** so macOS does not toggle Caps Lock / the LED.
+Controls what happens on a **quick tap** when you omit `tap`:
+
+| `native` | Quick press (no `tap`) | Long hold |
+|----------|------------------------|-----------|
+| `"enable"` (default) | fires the **physical** key (e.g. Caps Lock toggles) | layer |
+| `"disable"` | nothing | layer |
+
+Explicit `tap = "..."` always wins (used for both modes).
 
 | Config | Quick press | Long hold |
 |--------|-------------|-----------|
+| `{ hold = "mod_caps" }` | Caps Lock toggle | `mod_caps` |
 | `{ hold = "mod_caps", native = "disable" }` | nothing | `mod_caps` |
 | `{ tap = "escape", hold = "mod_caps", native = "disable" }` | Escape | `mod_caps` |
+
+> Caps Lock is seized by DriverKit, so “native” means keys-layer **emits** a Caps toggle on tap — not that the raw key leaks through. Use `native = "disable"` if you never want Caps Lock to toggle.
 
 ---
 

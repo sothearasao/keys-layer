@@ -51,10 +51,14 @@ pub fn run(config_path: &Path) -> Result<(), String> {
             f_row_media_hashes.len()
         );
     }
+    let suppress_native_caps = config.is_native_disabled(&KeyName::new("caps_lock"));
     let engine = Arc::new(Mutex::new(Engine::new(config)));
     let started = Instant::now();
 
-    caps_lock::force_caps_lock_off();
+    // Only clear Caps Lock when config asks to suppress it; otherwise leave state alone.
+    if suppress_native_caps {
+        caps_lock::force_caps_lock_off();
+    }
 
     let seized = seize_devices(&device_patterns)?;
     eprintln!("seized keyboards: {}", seized.join(", "));
@@ -159,7 +163,9 @@ pub fn run(config_path: &Path) -> Result<(), String> {
             if !(eng.should_intercept(&key) || eng.is_native_disabled(&key)) {
                 None
             } else {
-                if key.as_str() == "caps_lock" {
+                // Physical Caps is seized — block OS toggle only when native=disable.
+                // With native=enable, a quick tap emits caps_lock (IOHID toggle below).
+                if key.as_str() == "caps_lock" && eng.is_native_disabled(&key) {
                     caps_lock::force_caps_lock_off();
                 }
                 Some(eng.handle(input, now_ms))

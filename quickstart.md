@@ -1,14 +1,30 @@
 # Quick install
 
-Minimal setup for **macOS**. Details: [prerequisite](./prerequisite.md) · [installation](./installation.md) · [configuration](./configuration.md)
+Minimal setup for **macOS**. Details: [prerequisite](./prerequisite.md) · [installation](./installation.md) · [homebrew](./homebrew.md) · [configuration](./configuration.md)
 
-> **Always required:** Karabiner VirtualHID (driver + daemon) and Privacy permissions for `/usr/local/bin/keys-layer`. That is by design on macOS — see [prerequisite.md](./prerequisite.md).
+> **Always required:** Karabiner VirtualHID (driver + daemon) and Privacy permissions. That is by design on macOS — see [prerequisite.md](./prerequisite.md).
 >
 > **F-row:** On Apple keyboards, F1–F2 / F5–F12 act as brightness, backlight, media, and volume. **F3/F4 stay F-keys** (no Mission Control / Spotlight). Full table: [configuration.md](./configuration.md#f1f12-behavior-macos).
 
 ---
 
-## 1. Driver (once)
+## Option A — Homebrew
+
+```bash
+brew tap sothearasao/keys-layer https://github.com/sothearasao/keys-layer.git
+brew install --HEAD keys-layer
+keys-layer-setup
+```
+
+Grant **Accessibility** + **Input Monitoring** to the path shown by `brew caveats keys-layer`.
+
+More: [homebrew.md](./homebrew.md).
+
+---
+
+## Option B — From source
+
+### 1. Driver (once)
 
 Install [Karabiner-Elements](https://karabiner-elements.pqrs.org/) (or the standalone VirtualHID pkg), then enable:
 

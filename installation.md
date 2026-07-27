@@ -2,7 +2,7 @@
 
 Full install notes and troubleshooting.
 
-**Quickstart:** **[quickstart.md](./quickstart.md)**  
+**Quickstart:** **[quickstart.md](./quickstart.md)** · **[Homebrew](./homebrew.md)**  
 **Before / driver detail:** [prerequisite.md](./prerequisite.md) — VirtualHID + Privacy permissions are **permanent** requirements on macOS.
 
 Also: [autostart](./autostart.md) · [uninstall](./uninstall.md) · [configuration](./configuration.md) · [README](./README.md)

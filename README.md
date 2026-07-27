@@ -22,7 +22,16 @@ On Apple Internal (configurable): F1–F2 brightness, F5–F6 keyboard light, F7
 
 ## Quick start
 
-See **[quickstart.md](./quickstart.md)** (short checklist).
+See **[quickstart.md](./quickstart.md)** or install with **[Homebrew](./homebrew.md)**:
+
+```bash
+brew tap sothearasao/keys-layer https://github.com/sothearasao/keys-layer.git
+brew install --HEAD keys-layer
+keys-layer-setup
+# grant Accessibility + Input Monitoring (see brew caveats keys-layer)
+```
+
+From source:
 
 ```bash
 ./scripts/install.sh
@@ -32,11 +41,12 @@ tail -20 /var/log/keys-layer.log
 
 | Doc | When |
 |-----|------|
-| [quickstart.md](./quickstart.md) | First-time quickstart |
+| [quickstart.md](./quickstart.md) | First-time quickstart (from source) |
+| [homebrew.md](./homebrew.md) | `brew install` |
 | [prerequisite.md](./prerequisite.md) | Driver / permissions (required forever) |
 | [installation.md](./installation.md) | Full install + troubleshooting |
 | [configuration.md](./configuration.md) | TOML reference |
-| [uninstall.md](./uninstall.md) | Remove (`./scripts/uninstall.sh`) |
+| [uninstall.md](./uninstall.md) | Remove |
 
 Default config path (when no argument is given):
 

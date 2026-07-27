@@ -1,0 +1,147 @@
+#!/usr/bin/env bash
+# Post-Homebrew (or generic) setup: config + LaunchDaemon for keys-layer.
+#
+# Finds the keys-layer binary on PATH (Homebrew prefix or /usr/local/bin).
+#
+# Usage:
+#   keys-layer-setup              # config + daemon
+#   keys-layer-setup --no-daemon  # config only
+
+set -euo pipefail
+
+NO_DAEMON=0
+for arg in "$@"; do
+  case "$arg" in
+    --no-daemon) NO_DAEMON=1 ;;
+    -h|--help)
+      cat <<'EOF'
+keys-layer-setup — create config and optional LaunchDaemon
+
+  keys-layer-setup              config + autostart daemon
+  keys-layer-setup --no-daemon  config only
+EOF
+      exit 0
+      ;;
+    *)
+      echo "unknown option: $arg" >&2
+      exit 1
+      ;;
+  esac
+done
+
+if [[ "$(uname -s)" != "Darwin" ]]; then
+  echo "error: macOS only" >&2
+  exit 1
+fi
+
+REAL_USER="${SUDO_USER:-${USER}}"
+if [[ "$REAL_USER" == "root" ]]; then
+  echo "error: run as your login user (sudo is prompted when needed)" >&2
+  exit 1
+fi
+REAL_HOME="$(dscl . -read "/Users/${REAL_USER}" NFSHomeDirectory 2>/dev/null | awk '{print $2}')"
+if [[ -z "${REAL_HOME}" || ! -d "${REAL_HOME}" ]]; then
+  REAL_HOME="$(eval echo "~${REAL_USER}")"
+fi
+
+# Prefer explicit env (Homebrew opt path — stable across upgrades), then PATH.
+if [[ -n "${KEYS_LAYER_BIN:-}" && -x "${KEYS_LAYER_BIN}" ]]; then
+  BIN_PATH="${KEYS_LAYER_BIN}"
+elif [[ -x /opt/homebrew/opt/keys-layer/bin/keys-layer ]]; then
+  BIN_PATH="/opt/homebrew/opt/keys-layer/bin/keys-layer"
+elif [[ -x /usr/local/opt/keys-layer/bin/keys-layer ]]; then
+  BIN_PATH="/usr/local/opt/keys-layer/bin/keys-layer"
+elif command -v keys-layer >/dev/null 2>&1; then
+  BIN_PATH="$(command -v keys-layer)"
+elif [[ -x /usr/local/bin/keys-layer ]]; then
+  BIN_PATH="/usr/local/bin/keys-layer"
+else
+  echo "error: keys-layer binary not found. Install with Homebrew or ./scripts/install.sh" >&2
+  exit 1
+fi
+
+CONFIG_DIR="${REAL_HOME}/.config/keys-layer"
+CONFIG_PATH="${CONFIG_DIR}/config.toml"
+PLIST_LABEL="local.keys-layer"
+PLIST_DEST="/Library/LaunchDaemons/${PLIST_LABEL}.plist"
+
+# Example config: next to this script (Homebrew pkgshare) or repo.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+EXAMPLE_CANDIDATES=(
+  "${KEYS_LAYER_EXAMPLE:-}"
+  "${SCRIPT_DIR}/examples/config.example.toml"
+  "${SCRIPT_DIR}/../config.example.toml"
+  "${SCRIPT_DIR}/config.example.toml"
+)
+EXAMPLE_CONFIG=""
+for c in "${EXAMPLE_CANDIDATES[@]}"; do
+  [[ -n "$c" && -f "$c" ]] && EXAMPLE_CONFIG="$c" && break
+done
+
+# Plist template
+PLIST_CANDIDATES=(
+  "${KEYS_LAYER_PLIST_IN:-}"
+  "${SCRIPT_DIR}/local.keys-layer.plist.in"
+  "${SCRIPT_DIR}/../packaging/local.keys-layer.plist.in"
+)
+PLIST_TEMPLATE=""
+for c in "${PLIST_CANDIDATES[@]}"; do
+  [[ -n "$c" && -f "$c" ]] && PLIST_TEMPLATE="$c" && break
+done
+
+echo "==> keys-layer-setup"
+echo "    user:   ${REAL_USER}"
+echo "    binary: ${BIN_PATH}"
+echo "    config: ${CONFIG_PATH}"
+echo
+
+mkdir -p "${CONFIG_DIR}"
+if [[ -f "${CONFIG_PATH}" ]]; then
+  echo "==> keeping existing config"
+else
+  if [[ -z "${EXAMPLE_CONFIG}" ]]; then
+    echo "error: config.example.toml not found; create ${CONFIG_PATH} manually" >&2
+    exit 1
+  fi
+  cp "${EXAMPLE_CONFIG}" "${CONFIG_PATH}"
+  chown "${REAL_USER}" "${CONFIG_PATH}" 2>/dev/null || true
+  echo "==> created ${CONFIG_PATH}"
+fi
+
+if [[ "${NO_DAEMON}" -eq 1 ]]; then
+  echo "==> skipping LaunchDaemon (--no-daemon)"
+  echo "    run: sudo ${BIN_PATH} ${CONFIG_PATH}"
+  exit 0
+fi
+
+if [[ -z "${PLIST_TEMPLATE}" ]]; then
+  echo "error: local.keys-layer.plist.in not found" >&2
+  exit 1
+fi
+
+echo "==> installing LaunchDaemon"
+TMP_PLIST="$(mktemp)"
+sed \
+  -e "s|__KEYS_LAYER_BIN__|${BIN_PATH}|g" \
+  -e "s|__KEYS_LAYER_CONFIG__|${CONFIG_PATH}|g" \
+  "${PLIST_TEMPLATE}" > "${TMP_PLIST}"
+plutil -lint "${TMP_PLIST}" >/dev/null
+sudo cp "${TMP_PLIST}" "${PLIST_DEST}"
+rm -f "${TMP_PLIST}"
+sudo chown root:wheel "${PLIST_DEST}"
+sudo chmod 644 "${PLIST_DEST}"
+
+sudo launchctl bootout "system/${PLIST_LABEL}" 2>/dev/null || true
+sudo launchctl bootstrap system "${PLIST_DEST}"
+sudo launchctl kickstart -k "system/${PLIST_LABEL}"
+
+echo "==> disabling Karabiner-Core-Service if present"
+sudo launchctl bootout system/org.pqrs.service.daemon.Karabiner-Core-Service 2>/dev/null || true
+sudo launchctl disable system/org.pqrs.service.daemon.Karabiner-Core-Service 2>/dev/null || true
+sudo killall Karabiner-Core-Service 2>/dev/null || true
+
+echo
+echo "==> done"
+echo "Grant Accessibility + Input Monitoring to:"
+echo "  ${BIN_PATH}"
+echo "Then: tail -20 /var/log/keys-layer.log"

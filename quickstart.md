@@ -2,6 +2,10 @@
 
 Minimal setup for **macOS**. Details: [prerequisite](./prerequisite.md) · [installation](./installation.md) · [configuration](./configuration.md)
 
+> **Always required:** Karabiner VirtualHID (driver + daemon) and Privacy permissions for `/usr/local/bin/keys-layer`. That is by design on macOS — see [prerequisite.md](./prerequisite.md).
+>
+> **F-row:** On Apple keyboards, F1–F2 / F5–F12 act as brightness, backlight, media, and volume. **F3/F4 stay F-keys** (no Mission Control / Spotlight). Full table: [configuration.md](./configuration.md#f1f12-behavior-macos).
+
 ---
 
 ## 1. Driver (once)
@@ -44,7 +48,7 @@ tail -20 /var/log/keys-layer.log
 You want `keys-layer (DriverKit) running` and **no** `not permitted`.
 
 Edit config: `~/.config/keys-layer/config.toml` — **hot-reloads on save** (watch the log for `config reloaded OK` or `FAILED`).  
-Rebuild binary: `./scripts/install.sh` or `sudo launchctl kickstart -k system/local.keys-layer`
+Rebuild binary: `./scripts/install.sh` — if remaps die afterward, re-toggle Input Monitoring / Accessibility for `/usr/local/bin/keys-layer`, then `sudo launchctl kickstart -k system/local.keys-layer`.
 
 ---
 

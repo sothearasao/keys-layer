@@ -9,13 +9,20 @@ Inspired by [Kanata](https://github.com/jtroo/kanata), but focused on a small fe
 - **Momentary layers** — hold a key past `hold_ms` to activate a layer; release to leave
 - **Tap vs hold** — quick tap can emit a different key (or nothing)
 - **Holdable remaps** — layer keys like `j = "delete"` tap once or repeat while held
+- **Chords / sequences** — e.g. `k = ["left_alt", "delete"]` (Option+Delete) or `{ sequence = ["a", "b"] }`
+- **Config hot-reload** — save `config.toml` while running; success/failure is logged (no restart). Rebuild binary with `./scripts/install.sh`
 - **Per-layer / per-key timing** — `hold_ms` on settings, layer, or key
 - **`native = "disable"`** — suppress physical key behavior (useful for Caps Lock)
 - **DriverKit backend** — uses [Karabiner-DriverKit-VirtualHIDDevice](https://github.com/pqrs-org/Karabiner-DriverKit-VirtualHIDDevice) (same approach as Kanata)
+- **Mac F-row media** (Apple Internal by default) — brightness, volume, playback, etc.; see [F1–F12](./configuration.md#f1f12-behavior-macos)
+
+### F1–F12 (short)
+
+On Apple Internal (configurable): F1–F2 brightness, F5–F6 keyboard light, F7–F9 media, F10–F12 mute/volume. **F3/F4 stay as F-keys** (no Mission Control / Spotlight via VirtualHID). Other boards keep real F1–F12. Details: [configuration.md](./configuration.md#f1f12-behavior-macos).
 
 ## Quick start
 
-See **[install.md](./install.md)** (short checklist).
+See **[quickstart.md](./quickstart.md)** (short checklist).
 
 ```bash
 ./scripts/install.sh
@@ -25,8 +32,8 @@ tail -20 /var/log/keys-layer.log
 
 | Doc | When |
 |-----|------|
-| [install.md](./install.md) | First-time quickstart |
-| [prerequisite.md](./prerequisite.md) | Driver / permissions deep dive |
+| [quickstart.md](./quickstart.md) | First-time quickstart |
+| [prerequisite.md](./prerequisite.md) | Driver / permissions (required forever) |
 | [installation.md](./installation.md) | Full install + troubleshooting |
 | [configuration.md](./configuration.md) | TOML reference |
 | [uninstall.md](./uninstall.md) | Remove (`./scripts/uninstall.sh`) |
@@ -49,7 +56,8 @@ f = { tap = "f", hold = "mod_f" }
 caps = { hold = "mod_caps", native = "disable", hold_ms = 100 }
 
 [layer.mod_f]
-j = { key = "delete" } # tap = one delete; hold = repeating delete
+j = { key = "delete" }              # Delete
+k = ["left_alt", "delete"]          # Option + Delete
 
 [layer.mod_caps]
 h = "left"
@@ -68,6 +76,8 @@ Full syntax: **[configuration.md](./configuration.md)**.
 |---------|---------|
 | `j = "delete"` | Remap (holdable / repeats) |
 | `j = { key = "delete" }` | Same as above |
+| `k = ["left_alt", "delete"]` | Chord (Option+Delete); hold repeats last key |
+| `m = { sequence = ["a", "b"] }` | Tap each key in order on press |
 | `f = { tap = "f", hold = "mod_f" }` | Tap → `f`; hold → layer `mod_f` |
 | `caps = { hold = "mod_caps", native = "disable" }` | Hold-only layer; never fire native Caps Lock |
 
@@ -91,7 +101,23 @@ cargo install --path crates/keys-layer --force
 
 ## Important notes
 
-- Must run as **root** (`sudo`) — Karabiner VirtualHID IPC is root-only.
+### Permanent macOS requirements (by design)
+
+macOS does not allow a normal app to seize the keyboard. Like [Kanata](https://github.com/jtroo/kanata), keys-layer uses **Karabiner’s DriverKit VirtualHIDDevice**:
+
+| Requirement | Stays after install? |
+|-------------|----------------------|
+| VirtualHID **driver extension** enabled | Yes — needed every boot |
+| VirtualHID **daemon** running | Yes — usually via Karabiner-Elements or the standalone daemon |
+| **Accessibility** + **Input Monitoring** for `/usr/local/bin/keys-layer` | Yes — re-check after reinstalling the binary |
+| Run as **root** (LaunchDaemon or `sudo`) | Yes — Karabiner IPC is root-only |
+
+You do **not** need Karabiner-Elements’ own remapping (Core-Service). Use the VirtualHID stack only; quit KE remapping so it does not fight keys-layer.
+
+These are not temporary setup steps you can remove later — they are how keyboard remapping works on modern macOS without a custom Apple-signed dext.
+
+### Other
+
 - Do **not** run Karabiner-Elements remapping at the same time — only one process can grab the keyboard.
 - Uses `karabiner-driverkit` **0.3.x** (compatible with Karabiner-Elements’ bundled VirtualHID daemon ~6.x). Version **0.4.x** needs standalone VirtualHIDDevice v8.0.0 and will fail with `connect_failed asio.system:2` against KE’s daemon.
 

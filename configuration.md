@@ -2,7 +2,7 @@
 
 How to write and load a `keys-layer` config.
 
-Related docs: [README](./README.md) · [prerequisite](./prerequisite.md) · [installation](./installation.md) · [autostart](./autostart.md) · [uninstall](./uninstall.md) · [config.example.toml](./config.example.toml)
+Related docs: [README](./README.md) · [quickstart](./quickstart.md) · [prerequisite](./prerequisite.md) · [installation](./installation.md) · [autostart](./autostart.md) · [uninstall](./uninstall.md) · [config.example.toml](./config.example.toml)
 
 ## Where the config lives
 
@@ -75,7 +75,32 @@ f_row_media_devices = ["Apple Internal"]  # Fn-aware F-row media (default)
 | `devices` | string array | `[]` (all keyboards) | Product-name substrings to seize; empty = all |
 | `f_row_media_devices` | string array | `["Apple Internal"]` | Only these keyboards get Mac-style F1–F12 ↔ media (Fn/Globe + System Settings). Other boards keep real F-keys. Set `[]` to disable. |
 
-On matching devices, F1–F12 follow macOS: media by default, real F-keys while holding **Fn** / **Globe** (inverted if “Use F1, F2… as standard function keys” is on). F3/F4 stay as F-keys (no stable VirtualHID Mission Control / Spotlight).
+### F1–F12 behavior (macOS)
+
+On devices listed in `f_row_media_devices` (default: **Apple Internal**), the function row follows macOS-style media keys. **Fn** / **Globe** flips between media and real F-keys (inverted if System Settings → “Use F1, F2… as standard function keys” is on).
+
+| Key | Default (media mode) | Notes |
+|-----|----------------------|--------|
+| **F1** | Brightness down | |
+| **F2** | Brightness up | |
+| **F3** | *(real F3)* | **Limitation:** Mission Control is not available via VirtualHID |
+| **F4** | *(real F4)* | **Limitation:** Spotlight / Launchpad is not available via VirtualHID |
+| **F5** | Keyboard backlight down | |
+| **F6** | Keyboard backlight up | |
+| **F7** | Previous track | |
+| **F8** | Play / pause | |
+| **F9** | Next track | |
+| **F10** | Mute | |
+| **F11** | Volume down | |
+| **F12** | Volume up | |
+
+**Other keyboards** (Moonlander, etc., or any board not matching `f_row_media_devices`): always emit real **F1–F12**.
+
+**Limitations (v1):**
+
+- F3 / F4 cannot trigger Mission Control or Spotlight through the virtual keyboard — they stay as F-keys.
+- Per-key custom F-row remaps in TOML are not supported yet; use `f_row_media_devices = []` if you want only raw F-keys everywhere.
+- This is VirtualHID approximation of Apple’s F-row, not the native keyboard driver.
 
 ---
 
@@ -125,7 +150,41 @@ j = { tap = "delete" }
 | Hold (repeat) | repeating target |
 | Release | target key up |
 
-### 2. Hold-to-layer
+### 2. Chord (combo) remap
+
+Hold several keys together — e.g. **Option + Delete**:
+
+```toml
+[layer.mod_f]
+j = "delete"
+k = ["left_alt", "delete"]
+# same as:
+k = { chord = ["option", "delete"] }   # option/alt → left_alt
+```
+
+| Event | Output |
+|-------|--------|
+| Press | KeyDown each key **in order** |
+| Hold (repeat) | KeyRepeat of the **last** key only (modifiers stay down) |
+| Release | KeyUp each key in **reverse** order |
+
+### 3. Sequence remap
+
+Fire a series of full taps on press (not held):
+
+```toml
+[layer.mod_f]
+m = { sequence = ["a", "b", "c"] }
+```
+
+| Event | Output |
+|-------|--------|
+| Press | for each key: Down then Up |
+| Release | nothing |
+
+Do not combine `chord` / `sequence` with `hold` on the same binding.
+
+### 4. Hold-to-layer
 
 ```toml
 [layer.base]
@@ -186,6 +245,7 @@ caps = { hold = "mod_caps", native = "disable", hold_ms = 100 }
 
 [layer.mod_f]
 j = { key = "delete" }
+k = ["left_alt", "delete"]
 
 [layer.mod_caps]
 h = "left"
@@ -197,7 +257,7 @@ l = "right"
 Behavior:
 
 - Tap `f` → types `f`  
-- Hold `f` ≥ 150ms → `mod_f`; then `j` → Delete (hold `j` to repeat Delete)  
+- Hold `f` ≥ 150ms → `mod_f`; then `j` → Delete; `k` → Option+Delete  
 - Hold Caps ≥ 100ms → vim arrows on `hjkl`; release Caps to leave  
 - Caps Lock itself never toggles (`native = "disable"`)
 
@@ -249,6 +309,9 @@ Full DriverKit HID map: `crates/keys-layer/src/macos/hid_usage.rs`.
 | `base layer "…" not found` | `settings.base_layer` does not match any `[layer.*]` |
 | `hold target layer "…" does not exist` | `hold = "…"` points at a missing layer |
 | `need key/tap … or hold = "layer"` | Table binding is empty / incomplete |
+| `chord list must not be empty` | `[]` or empty `chord` / `sequence` |
+| `use only one of key/tap, chord, or sequence` | Mixed remap forms on one key |
+| `chord/sequence cannot combine with hold` | Hold-to-layer plus chord/sequence |
 | `native = "disable" only applies with hold` | `native` used on a plain remap |
 
 ---

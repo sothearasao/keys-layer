@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 
-use crate::config::{Config, KeyBinding, NativeMode};
+use crate::config::{Config, KeyBinding, NativeMode, OutputKeys};
 use crate::key::KeyName;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,10 +47,12 @@ pub struct Engine {
     physical_down: HashSet<KeyName>,
     /// Hold keys already resolved as tap while still physically held (ignore their up).
     resolved_while_held: HashSet<KeyName>,
+    /// Sequence remaps already fired on KeyDown (ignore their KeyUp).
+    sequence_done: HashSet<KeyName>,
     /// Output keys we have pressed and not yet released (for remap tracking).
     output_down: HashSet<KeyName>,
-    /// Maps physical key → the output key currently held for that physical key.
-    physical_to_output: std::collections::HashMap<KeyName, KeyName>,
+    /// Maps physical key → outputs currently held for that physical key.
+    physical_to_output: std::collections::HashMap<KeyName, OutputKeys>,
 }
 
 impl Engine {
@@ -63,6 +65,7 @@ impl Engine {
             active_holds: Vec::new(),
             physical_down: HashSet::new(),
             resolved_while_held: HashSet::new(),
+            sequence_done: HashSet::new(),
             output_down: HashSet::new(),
             physical_to_output: std::collections::HashMap::new(),
         }
@@ -84,6 +87,7 @@ impl Engine {
         self.active_holds.clear();
         self.physical_down.clear();
         self.resolved_while_held.clear();
+        self.sequence_done.clear();
         self.physical_to_output.clear();
         out
     }
@@ -104,7 +108,7 @@ impl Engine {
         if self.pending.is_some() || !self.active_holds.is_empty() {
             return true;
         }
-        if self.resolved_while_held.contains(key) {
+        if self.resolved_while_held.contains(key) || self.sequence_done.contains(key) {
             return true;
         }
         // If we already mapped this physical key down, we must see the up.
@@ -160,10 +164,16 @@ impl Engine {
 
     fn on_key_down(&mut self, key: KeyName, now_ms: u64) -> Vec<OutputEvent> {
         if self.physical_down.contains(&key) {
-            // OS key-repeat while held: re-fire the remapped output so hold
-            // works (e.g. hold J on mod_f → repeating Delete).
+            // OS key-repeat while held: re-fire remapped output.
             if let Some(output) = self.physical_to_output.get(&key) {
-                return vec![OutputEvent::KeyRepeat(output.clone())];
+                return match output {
+                    OutputKeys::Single(k) => vec![OutputEvent::KeyRepeat(k.clone())],
+                    OutputKeys::Chord(keys) => keys
+                        .last()
+                        .map(|k| vec![OutputEvent::KeyRepeat(k.clone())])
+                        .unwrap_or_default(),
+                    OutputKeys::Sequence(_) => Vec::new(),
+                };
             }
             return Vec::new();
         }
@@ -218,7 +228,7 @@ impl Engine {
                 out.extend(self.press_output(key, target));
             }
             None => {
-                out.extend(self.press_output(key.clone(), key));
+                out.extend(self.press_output(key.clone(), OutputKeys::Single(key)));
             }
         }
         out
@@ -229,6 +239,9 @@ impl Engine {
 
         if self.resolved_while_held.remove(&key) {
             // Already emitted as tap when a later key arrived; swallow the up.
+            return Vec::new();
+        }
+        if self.sequence_done.remove(&key) {
             return Vec::new();
         }
 
@@ -304,24 +317,63 @@ impl Engine {
         Vec::new()
     }
 
-    fn press_output(&mut self, physical: KeyName, output: KeyName) -> Vec<OutputEvent> {
-        self.physical_to_output
-            .insert(physical, output.clone());
-        if self.output_down.insert(output.clone()) {
-            vec![OutputEvent::KeyDown(output)]
-        } else {
-            // Already down (unlikely); ignore.
-            Vec::new()
+    fn press_output(&mut self, physical: KeyName, output: OutputKeys) -> Vec<OutputEvent> {
+        match &output {
+            OutputKeys::Sequence(keys) => {
+                self.sequence_done.insert(physical);
+                let mut out = Vec::new();
+                for k in keys {
+                    out.push(OutputEvent::KeyDown(k.clone()));
+                    out.push(OutputEvent::KeyUp(k.clone()));
+                }
+                out
+            }
+            OutputKeys::Single(k) => {
+                self.physical_to_output
+                    .insert(physical, output.clone());
+                if self.output_down.insert(k.clone()) {
+                    vec![OutputEvent::KeyDown(k.clone())]
+                } else {
+                    Vec::new()
+                }
+            }
+            OutputKeys::Chord(keys) => {
+                self.physical_to_output
+                    .insert(physical, output.clone());
+                let mut out = Vec::new();
+                for k in keys {
+                    if self.output_down.insert(k.clone()) {
+                        out.push(OutputEvent::KeyDown(k.clone()));
+                    }
+                }
+                out
+            }
         }
     }
 
     fn release_output(&mut self, physical: &KeyName) -> Vec<OutputEvent> {
-        if let Some(output) = self.physical_to_output.remove(physical) {
-            if self.output_down.remove(&output) {
-                return vec![OutputEvent::KeyUp(output)];
+        let Some(output) = self.physical_to_output.remove(physical) else {
+            return Vec::new();
+        };
+        match output {
+            OutputKeys::Single(k) => {
+                if self.output_down.remove(&k) {
+                    vec![OutputEvent::KeyUp(k)]
+                } else {
+                    Vec::new()
+                }
             }
+            OutputKeys::Chord(keys) => {
+                let mut out = Vec::new();
+                for k in keys.into_iter().rev() {
+                    if self.output_down.remove(&k) {
+                        out.push(OutputEvent::KeyUp(k));
+                    }
+                }
+                out
+            }
+            OutputKeys::Sequence(_) => Vec::new(),
         }
-        Vec::new()
     }
 }
 
@@ -348,6 +400,25 @@ mod tests {
 
             [layer.mod_f]
             j = "delete"
+            "#,
+        )
+        .unwrap();
+        Engine::new(cfg)
+    }
+
+    fn chord_engine() -> Engine {
+        let cfg = Config::from_toml_str(
+            r#"
+            [settings]
+            hold_ms = 200
+
+            [layer.base]
+            f = { tap = "f", hold = "mod_f" }
+
+            [layer.mod_f]
+            j = "delete"
+            k = ["left_alt", "delete"]
+            m = { sequence = ["a", "b"] }
             "#,
         )
         .unwrap();
@@ -564,5 +635,54 @@ mod tests {
         let out = eng.reload(cfg);
         assert_eq!(out, vec![OutputEvent::KeyUp(KeyName::new("delete"))]);
         assert_eq!(eng.current_layer(), "base");
+    }
+
+    #[test]
+    fn chord_option_delete_press_repeat_release() {
+        let mut eng = chord_engine();
+        eng.handle(InputEvent::KeyDown(KeyName::new("f")), 0);
+        assert!(eng.tick(200).is_empty());
+
+        let out = eng.handle(InputEvent::KeyDown(KeyName::new("k")), 250);
+        assert_eq!(
+            out,
+            vec![
+                OutputEvent::KeyDown(KeyName::new("left_alt")),
+                OutputEvent::KeyDown(KeyName::new("delete")),
+            ]
+        );
+
+        let out = eng.handle(InputEvent::KeyDown(KeyName::new("k")), 300);
+        assert_eq!(out, vec![OutputEvent::KeyRepeat(KeyName::new("delete"))]);
+
+        let out = eng.handle(InputEvent::KeyUp(KeyName::new("k")), 350);
+        assert_eq!(
+            out,
+            vec![
+                OutputEvent::KeyUp(KeyName::new("delete")),
+                OutputEvent::KeyUp(KeyName::new("left_alt")),
+            ]
+        );
+    }
+
+    #[test]
+    fn sequence_fires_on_press_swallows_up() {
+        let mut eng = chord_engine();
+        eng.handle(InputEvent::KeyDown(KeyName::new("f")), 0);
+        assert!(eng.tick(200).is_empty());
+
+        let out = eng.handle(InputEvent::KeyDown(KeyName::new("m")), 250);
+        assert_eq!(
+            out,
+            vec![
+                OutputEvent::KeyDown(KeyName::new("a")),
+                OutputEvent::KeyUp(KeyName::new("a")),
+                OutputEvent::KeyDown(KeyName::new("b")),
+                OutputEvent::KeyUp(KeyName::new("b")),
+            ]
+        );
+
+        let out = eng.handle(InputEvent::KeyUp(KeyName::new("m")), 260);
+        assert!(out.is_empty());
     }
 }

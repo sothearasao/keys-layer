@@ -5,7 +5,9 @@ hold_ms = 200
 # Empty / omitted = all keyboards.
 # devices = ["Moonlander"]
 # Mac-style F1–F12 ↔ media (respects Fn/Globe + System Settings).
-# Only these product-name substrings get it — Moonlander keeps real F-keys.
+# Only these product-name substrings get it — other boards keep real F-keys.
+# F3/F4 stay as F-keys (no Mission Control / Spotlight via VirtualHID).
+# Set [] to disable. See configuration.md § F1–F12.
 f_row_media_devices = ["Apple Internal"]
 
 # Hold F → mod_f. Hold Caps → mod_caps (vim arrows).
@@ -14,9 +16,10 @@ hold_ms = 150
 f = { tap = "f", hold = "mod_f" }
 caps = { hold = "mod_caps", native = "disable", hold_ms = 100 }
 
-# While mod_f is active: J → Delete (tap = one delete; hold = repeating delete).
+# While mod_f is active: J → Delete; K → Option+Delete (delete word).
 [layer.mod_f]
 j = { key = "delete" }
+k = ["left_alt", "delete"]
 
 # While mod_caps is active: hjkl → arrows (vim style).
 [layer.mod_caps]

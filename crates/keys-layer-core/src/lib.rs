@@ -7,6 +7,8 @@ mod config;
 mod engine;
 mod key;
 
-pub use config::{load_config, Config, ConfigError, KeyBinding, Layer, NativeMode, Settings};
+pub use config::{
+    load_config, Config, ConfigError, KeyBinding, Layer, NativeMode, OutputKeys, Settings,
+};
 pub use engine::{Engine, InputEvent, OutputEvent};
 pub use key::KeyName;

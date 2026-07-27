@@ -2,8 +2,8 @@
 
 Full install notes and troubleshooting.
 
-**Quickstart:** **[install.md](./install.md)**  
-**Before / driver detail:** [prerequisite.md](./prerequisite.md)
+**Quickstart:** **[quickstart.md](./quickstart.md)**  
+**Before / driver detail:** [prerequisite.md](./prerequisite.md) — VirtualHID + Privacy permissions are **permanent** requirements on macOS.
 
 Also: [autostart](./autostart.md) · [uninstall](./uninstall.md) · [configuration](./configuration.md) · [README](./README.md)
 
@@ -48,15 +48,22 @@ tail -20 /var/log/keys-layer.log
 # no: IOHIDDeviceOpen … not permitted
 ```
 
-Reload after **rebuild** (binary change):
+### After every rebuild (`./scripts/install.sh`)
+
+Config edits hot-reload — **no** rebuild needed for TOML changes.
+
+Replacing the binary often makes macOS drop Input Monitoring even though the path is unchanged. If remaps stop or the log shows `not permitted`:
+
+1. Re-toggle or remove/+ again **Accessibility** and **Input Monitoring** for `/usr/local/bin/keys-layer`  
+2. Then:
 
 ```bash
-./scripts/install.sh          # rebuild + reinstall daemon
-# or just:
 sudo launchctl kickstart -k system/local.keys-layer
 ```
 
-Config edits hot-reload automatically — see [configuration.md](./configuration.md#hot-reload).
+Or just run `./scripts/install.sh` again after fixing Privacy (it kickstarts the daemon).
+
+Details: [configuration.md](./configuration.md#hot-reload).
 
 ---
 
@@ -112,7 +119,7 @@ Use `native = "disable"` on Caps in config. Confirm no second remapper is runnin
 
 ### After reinstall nothing works
 
-TCC is path-based. Grant Accessibility + Input Monitoring to the **new** binary path (`/usr/local/bin/keys-layer`), then:
+Replacing `/usr/local/bin/keys-layer` often invalidates TCC even at the same path. Re-toggle or remove/+ **Accessibility** and **Input Monitoring** for that binary, then:
 
 ```bash
 sudo launchctl kickstart -k system/local.keys-layer

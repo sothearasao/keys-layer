@@ -57,10 +57,30 @@ pub enum NativeMode {
     Disable,
 }
 
+/// What a remap emits when the physical key is pressed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OutputKeys {
+    /// One key (holdable / repeats).
+    Single(KeyName),
+    /// All keys down in order; up in reverse on release (e.g. Option+Delete).
+    Chord(Vec<KeyName>),
+    /// Full tap each key on press only (Down+Up); physical KeyUp is ignored.
+    Sequence(Vec<KeyName>),
+}
+
+impl OutputKeys {
+    pub fn keys(&self) -> &[KeyName] {
+        match self {
+            Self::Single(k) => std::slice::from_ref(k),
+            Self::Chord(keys) | Self::Sequence(keys) => keys.as_slice(),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum KeyBinding {
-    /// Always emit this key (remap or identity).
-    Remap(KeyName),
+    /// Remap to one key, a chord, or a one-shot sequence.
+    Remap(OutputKeys),
     /// After `hold_ms`, momentarily activate `hold` layer.
     /// Optional `tap` fires on quick release; with `native = "disable"` the
     /// physical key itself never fires.
@@ -131,6 +151,8 @@ struct RawLayer {
 #[serde(untagged)]
 enum RawBinding {
     Simple(String),
+    /// Chord: `k = ["left_alt", "delete"]`
+    ChordList(Vec<String>),
     Table(RawBindingTable),
 }
 
@@ -141,6 +163,12 @@ struct RawBindingTable {
     key: Option<String>,
     #[serde(default)]
     tap: Option<String>,
+    /// Chord: `{ chord = ["left_alt", "delete"] }`
+    #[serde(default)]
+    chord: Option<Vec<String>>,
+    /// Sequence of taps: `{ sequence = ["a", "b"] }`
+    #[serde(default)]
+    sequence: Option<Vec<String>>,
     /// Hold-to-layer name (momentary layer).
     #[serde(default)]
     hold: Option<String>,
@@ -182,7 +210,12 @@ impl Config {
                 }
                 let key = KeyName::new(&key_str);
                 let binding = match binding {
-                    RawBinding::Simple(target) => KeyBinding::Remap(KeyName::new(target)),
+                    RawBinding::Simple(target) => {
+                        KeyBinding::Remap(OutputKeys::Single(KeyName::new(target)))
+                    }
+                    RawBinding::ChordList(keys) => {
+                        KeyBinding::Remap(parse_key_list(&layer_name, &key_str, "chord", keys)?)
+                    }
                     RawBinding::Table(table) => {
                         parse_table_binding(&layer_name, &key_str, table)?
                     }
@@ -259,6 +292,24 @@ impl Config {
     }
 }
 
+fn parse_key_list(
+    layer_name: &str,
+    key: &str,
+    kind: &str,
+    keys: Vec<String>,
+) -> Result<OutputKeys, ConfigError> {
+    if keys.is_empty() {
+        return Err(ConfigError::Validation(format!(
+            "layer {layer_name:?} key {key}: {kind} list must not be empty"
+        )));
+    }
+    let names: Vec<KeyName> = keys.into_iter().map(KeyName::new).collect();
+    match kind {
+        "sequence" => Ok(OutputKeys::Sequence(names)),
+        _ => Ok(OutputKeys::Chord(names)),
+    }
+}
+
 fn parse_table_binding(
     layer_name: &str,
     key: &str,
@@ -268,6 +319,11 @@ fn parse_table_binding(
 
     // Hold-to-layer (tap optional).
     if let Some(hold) = table.hold {
+        if table.chord.is_some() || table.sequence.is_some() {
+            return Err(ConfigError::Validation(format!(
+                "layer {layer_name:?} key {key}: chord/sequence cannot combine with hold"
+            )));
+        }
         let physical = KeyName::new(key);
         let tap = table.tap.map(KeyName::new).and_then(|t| {
             if native == NativeMode::Disable && t == physical {
@@ -284,24 +340,45 @@ fn parse_table_binding(
         });
     }
 
-    // Holdable remap on a layer: `j = { key = "delete" }` or `j = { tap = "delete" }`.
+    if table.hold_ms.is_some() {
+        return Err(ConfigError::Validation(format!(
+            "layer {layer_name:?} key {key}: hold_ms only applies with hold = \"layer\""
+        )));
+    }
+    if native == NativeMode::Disable {
+        return Err(ConfigError::Validation(format!(
+            "layer {layer_name:?} key {key}: native = \"disable\" only applies with hold = \"layer\""
+        )));
+    }
+
+    let has_chord = table.chord.is_some();
+    let has_seq = table.sequence.is_some();
+    let has_single = table.key.is_some() || table.tap.is_some();
+    if (has_chord as u8) + (has_seq as u8) + (has_single as u8) > 1 {
+        return Err(ConfigError::Validation(format!(
+            "layer {layer_name:?} key {key}: use only one of key/tap, chord, or sequence"
+        )));
+    }
+
+    if let Some(keys) = table.chord {
+        return Ok(KeyBinding::Remap(parse_key_list(
+            layer_name, key, "chord", keys,
+        )?));
+    }
+    if let Some(keys) = table.sequence {
+        return Ok(KeyBinding::Remap(parse_key_list(
+            layer_name, key, "sequence", keys,
+        )?));
+    }
+
+    // Holdable remap: `j = { key = "delete" }` or `j = { tap = "delete" }`.
     if let Some(target) = table.key.or(table.tap) {
-        if table.hold_ms.is_some() {
-            return Err(ConfigError::Validation(format!(
-                "layer {layer_name:?} key {key}: hold_ms only applies with hold = \"layer\""
-            )));
-        }
-        if native == NativeMode::Disable {
-            return Err(ConfigError::Validation(format!(
-                "layer {layer_name:?} key {key}: native = \"disable\" only applies with hold = \"layer\""
-            )));
-        }
-        return Ok(KeyBinding::Remap(KeyName::new(target)));
+        return Ok(KeyBinding::Remap(OutputKeys::Single(KeyName::new(target))));
     }
 
     Err(ConfigError::Validation(format!(
-        "layer {layer_name:?} key {key}: need `key`/`tap` for a remap, or `hold = \"layer\"` \
-         for a hold-to-layer binding"
+        "layer {layer_name:?} key {key}: need `key`/`tap`, `chord = [...]`, `sequence = [...]`, \
+         or `hold = \"layer\"`"
     )))
 }
 
@@ -362,7 +439,7 @@ mod tests {
             _ => panic!("expected hold"),
         }
         match cfg.binding("mod_f", &KeyName::new("j")).unwrap() {
-            KeyBinding::Remap(k) => assert_eq!(k.as_str(), "delete"),
+            KeyBinding::Remap(OutputKeys::Single(k)) => assert_eq!(k.as_str(), "delete"),
             _ => panic!("expected remap"),
         }
     }
@@ -463,13 +540,67 @@ mod tests {
         )
         .unwrap();
         match cfg.binding("mod_f", &KeyName::new("j")).unwrap() {
-            KeyBinding::Remap(k) => assert_eq!(k.as_str(), "delete"),
+            KeyBinding::Remap(OutputKeys::Single(k)) => assert_eq!(k.as_str(), "delete"),
             _ => panic!("expected remap"),
         }
         match cfg.binding("mod_f", &KeyName::new("k")).unwrap() {
-            KeyBinding::Remap(k) => assert_eq!(k.as_str(), "escape"),
+            KeyBinding::Remap(OutputKeys::Single(k)) => assert_eq!(k.as_str(), "escape"),
             _ => panic!("expected remap"),
         }
+    }
+
+    #[test]
+    fn parses_chord_and_sequence() {
+        let cfg = Config::from_toml_str(
+            r#"
+            [layer.base]
+            f = { tap = "f", hold = "mod_f" }
+
+            [layer.mod_f]
+            k = ["left_alt", "delete"]
+            l = { chord = ["option", "delete"] }
+            m = { sequence = ["a", "b"] }
+            "#,
+        )
+        .unwrap();
+
+        match cfg.binding("mod_f", &KeyName::new("k")).unwrap() {
+            KeyBinding::Remap(OutputKeys::Chord(keys)) => {
+                assert_eq!(
+                    keys.iter().map(|k| k.as_str()).collect::<Vec<_>>(),
+                    vec!["left_alt", "delete"]
+                );
+            }
+            _ => panic!("expected chord"),
+        }
+        match cfg.binding("mod_f", &KeyName::new("l")).unwrap() {
+            KeyBinding::Remap(OutputKeys::Chord(keys)) => {
+                assert_eq!(keys[0].as_str(), "left_alt"); // option → left_alt
+                assert_eq!(keys[1].as_str(), "delete");
+            }
+            _ => panic!("expected chord"),
+        }
+        match cfg.binding("mod_f", &KeyName::new("m")).unwrap() {
+            KeyBinding::Remap(OutputKeys::Sequence(keys)) => {
+                assert_eq!(
+                    keys.iter().map(|k| k.as_str()).collect::<Vec<_>>(),
+                    vec!["a", "b"]
+                );
+            }
+            _ => panic!("expected sequence"),
+        }
+    }
+
+    #[test]
+    fn rejects_empty_chord() {
+        let err = Config::from_toml_str(
+            r#"
+            [layer.base]
+            k = []
+            "#,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("empty"));
     }
 
     #[test]

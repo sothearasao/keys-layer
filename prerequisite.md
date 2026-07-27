@@ -1,21 +1,22 @@
 # Prerequisites (macOS)
 
-Do these **before** installing `keys-layer`.
+Do these **before** installing `keys-layer`. They are **permanent** — not a one-time bootstrap you can uninstall later while still using keys-layer.
 
-Related: [install](./install.md) · [installation](./installation.md) · [autostart](./autostart.md) · [uninstall](./uninstall.md) · [configuration](./configuration.md) · [README](./README.md)
+Related: [quickstart](./quickstart.md) · [installation](./installation.md) · [autostart](./autostart.md) · [uninstall](./uninstall.md) · [configuration](./configuration.md) · [README](./README.md)
 
 ---
 
-## What you need
+## What you need (ongoing)
 
-| Item | Why |
-|------|-----|
-| macOS 11 (Big Sur) or newer | DriverKit VirtualHID |
-| [Rust](https://rustup.rs) | Build from source |
-| Xcode Command Line Tools | Compile the DriverKit client (`xcode-select --install`) |
-| Karabiner VirtualHIDDevice | Seizes keyboards and injects remapped keys |
+| Item | Why | Temporary? |
+|------|-----|------------|
+| macOS 11 (Big Sur) or newer | DriverKit VirtualHID | No |
+| [Rust](https://rustup.rs) + Xcode CLT | Build from source (`./scripts/install.sh`) | Only to build |
+| **Karabiner VirtualHIDDevice** (driver + daemon) | Seizes keyboards and injects remapped keys | **No — required forever** |
+| **Accessibility** + **Input Monitoring** for the binary | Open HID devices | **No — required forever** |
+| Run as **root** | Karabiner IPC is root-only | **No** |
 
-`keys-layer` must run as **root** (Karabiner IPC is root-only).
+Apple does not allow third-party remappers to grab the keyboard without a DriverKit extension. keys-layer reuses [pqrs VirtualHID](https://github.com/pqrs-org/Karabiner-DriverKit-VirtualHIDDevice) (same stack as Kanata) instead of shipping its own signed dext.
 
 ---
 

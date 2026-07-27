@@ -50,6 +50,10 @@ class KeysLayer < Formula
       Finish setup (config + LaunchDaemon):
         keys-layer-setup
 
+      Then grant Accessibility + Input Monitoring to the binary above,
+      and restart (TCC applies only to a new process):
+        sudo launchctl kickstart -k system/local.keys-layer
+
       Or run in the foreground:
         sudo #{opt_bin}/keys-layer
 

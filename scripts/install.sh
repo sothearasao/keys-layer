@@ -164,13 +164,16 @@ echo "       (remove old ~/.cargo/bin/keys-layer entries if present)"
 echo "  3. Keep Karabiner-Elements remapping quit; VirtualHID daemon must stay running."
 echo
 if [[ "${NO_DAEMON}" -eq 0 ]]; then
+  echo "After enabling Accessibility + Input Monitoring, restart the daemon"
+  echo "(macOS does not apply TCC to an already-running process):"
+  echo "  sudo launchctl kickstart -k system/${PLIST_LABEL}"
+  echo
   echo "Verify:"
   echo "  tail -20 /var/log/keys-layer.log"
   echo "  sudo launchctl print system/${PLIST_LABEL} | head -20"
   echo
   echo "Config edits hot-reload automatically (see /var/log/keys-layer.log)."
-  echo "After rebuilding the binary:"
-  echo "  sudo launchctl kickstart -k system/${PLIST_LABEL}"
+  echo "After rebuilding the binary, re-check Privacy, then kickstart again."
 else
   echo "Run in foreground:"
   echo "  sudo ${BIN_PATH} ${CONFIG_PATH}"

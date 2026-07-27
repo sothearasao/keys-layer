@@ -18,8 +18,13 @@ keys-layer-setup
 ```
 
 Grant **Accessibility** + **Input Monitoring** to  
-`$(brew --prefix)/opt/keys-layer/bin/keys-layer`  
-(see also `brew info sothearasao/keys-layer/keys-layer`).
+`$(brew --prefix)/opt/keys-layer/bin/keys-layer`, then restart the daemon:
+
+```bash
+sudo launchctl kickstart -k system/local.keys-layer
+```
+
+(macOS does not apply new Privacy grants to an already-running process. Re-running `keys-layer-setup` works only because it kickstarts.)
 
 Latest from `main`: `brew install --HEAD sothearasao/keys-layer/keys-layer`
 
@@ -57,6 +62,12 @@ cd /path/to/keys-layer
 
 - Accessibility  
 - Input Monitoring  
+
+Then restart so TCC applies (install already started the daemon):
+
+```bash
+sudo launchctl kickstart -k system/local.keys-layer
+```
 
 ---
 

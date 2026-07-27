@@ -34,14 +34,23 @@ brew info sothearasao/keys-layer/keys-layer
 ## Finish setup
 
 1. **VirtualHID** — enable the DriverKit extension ([prerequisite.md](./prerequisite.md)).
-2. **Privacy** — Accessibility + Input Monitoring for:
-   `$(brew --prefix)/opt/keys-layer/bin/keys-layer`  
-   (also shown under **Caveats** in `brew info sothearasao/keys-layer/keys-layer`)
-3. **Config + LaunchDaemon:**
+2. **Config + LaunchDaemon:**
 
 ```bash
 keys-layer-setup
 ```
+
+3. **Privacy** — Accessibility + Input Monitoring for:
+   `$(brew --prefix)/opt/keys-layer/bin/keys-layer`  
+   (also shown under **Caveats** in `brew info sothearasao/keys-layer/keys-layer`)
+
+4. **Restart the daemon** — TCC only applies on a new process; the first start usually ran before you toggled Privacy:
+
+```bash
+sudo launchctl kickstart -k system/local.keys-layer
+```
+
+You do **not** need to re-run `keys-layer-setup` for that — setup only helps because it kickstarts at the end.
 
 Config only (no daemon):
 

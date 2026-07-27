@@ -142,6 +142,9 @@ sudo killall Karabiner-Core-Service 2>/dev/null || true
 
 echo
 echo "==> done"
-echo "Grant Accessibility + Input Monitoring to:"
+echo "The daemon is already running. Grant Accessibility + Input Monitoring to:"
 echo "  ${BIN_PATH}"
-echo "Then: tail -20 /var/log/keys-layer.log"
+echo "Then restart it so TCC applies (re-running setup is unnecessary):"
+echo "  sudo launchctl kickstart -k system/${PLIST_LABEL}"
+echo "Verify:"
+echo "  tail -20 /var/log/keys-layer.log"

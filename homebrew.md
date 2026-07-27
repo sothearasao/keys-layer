@@ -8,17 +8,26 @@ Related: [quickstart](./quickstart.md) · [prerequisite](./prerequisite.md) · [
 
 ## Install
 
+Homebrew 6+ requires trusting third-party taps (custom remotes must trust the **whole** tap):
+
 ```bash
 brew tap sothearasao/keys-layer https://github.com/sothearasao/keys-layer.git
-brew install --HEAD keys-layer
+brew trust sothearasao/keys-layer
+brew install --HEAD sothearasao/keys-layer/keys-layer
 ```
 
 `--HEAD` builds from the `main` branch (no release tag required yet).
 
+After install, see notes with:
+
+```bash
+brew info sothearasao/keys-layer/keys-layer
+```
+
 After you publish a GitHub release and fill `url` / `sha256` in [`Formula/keys-layer.rb`](./Formula/keys-layer.rb), users can drop `--HEAD`:
 
 ```bash
-brew install keys-layer
+brew install sothearasao/keys-layer/keys-layer
 ```
 
 ---
@@ -26,7 +35,9 @@ brew install keys-layer
 ## Finish setup
 
 1. **VirtualHID** — enable the DriverKit extension ([prerequisite.md](./prerequisite.md)).
-2. **Privacy** — Accessibility + Input Monitoring for the Homebrew binary (path printed by `brew caveats keys-layer`, usually under `$(brew --prefix)/opt/keys-layer/bin/keys-layer`).
+2. **Privacy** — Accessibility + Input Monitoring for:
+   `$(brew --prefix)/opt/keys-layer/bin/keys-layer`  
+   (also shown under **Caveats** in `brew info sothearasao/keys-layer/keys-layer`)
 3. **Config + LaunchDaemon:**
 
 ```bash

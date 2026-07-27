@@ -26,9 +26,11 @@ See **[quickstart.md](./quickstart.md)** or install with **[Homebrew](./homebrew
 
 ```bash
 brew tap sothearasao/keys-layer https://github.com/sothearasao/keys-layer.git
-brew install --HEAD keys-layer
+brew trust sothearasao/keys-layer
+brew install --HEAD sothearasao/keys-layer/keys-layer
 keys-layer-setup
-# grant Accessibility + Input Monitoring (see brew caveats keys-layer)
+# grant Accessibility + Input Monitoring to:
+#   $(brew --prefix)/opt/keys-layer/bin/keys-layer
 ```
 
 From source:

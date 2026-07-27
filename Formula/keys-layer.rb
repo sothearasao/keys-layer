@@ -1,11 +1,12 @@
 # Homebrew formula for keys-layer (macOS only).
 #
 #   brew tap sothearasao/keys-layer https://github.com/sothearasao/keys-layer.git
-#   brew install --HEAD keys-layer
+#   brew trust sothearasao/keys-layer
+#   brew install --HEAD sothearasao/keys-layer/keys-layer
 #   keys-layer-setup
 #
 # After you publish a GitHub release tag, add stable `url` + `sha256` and users
-# can `brew install keys-layer` without --HEAD.
+# can `brew install sothearasao/keys-layer/keys-layer` without --HEAD.
 
 class KeysLayer < Formula
   desc "Hold-to-layer keyboard remapper for macOS (Karabiner VirtualHID)"

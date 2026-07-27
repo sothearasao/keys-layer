@@ -13,21 +13,20 @@ Homebrew 6+ requires trusting third-party taps (custom remotes must trust the **
 ```bash
 brew tap sothearasao/keys-layer https://github.com/sothearasao/keys-layer.git
 brew trust sothearasao/keys-layer
-brew install --HEAD sothearasao/keys-layer/keys-layer
+brew install sothearasao/keys-layer/keys-layer
+keys-layer-setup
 ```
 
-`--HEAD` builds from the `main` branch (no release tag required yet).
+Stable installs **v0.1.0** from the GitHub tag. For the latest `main` branch instead:
+
+```bash
+brew install --HEAD sothearasao/keys-layer/keys-layer
+```
 
 After install, see notes with:
 
 ```bash
 brew info sothearasao/keys-layer/keys-layer
-```
-
-After you publish a GitHub release and fill `url` / `sha256` in [`Formula/keys-layer.rb`](./Formula/keys-layer.rb), users can drop `--HEAD`:
-
-```bash
-brew install sothearasao/keys-layer/keys-layer
 ```
 
 ---
@@ -62,8 +61,8 @@ tail -20 /var/log/keys-layer.log
 ## Upgrade
 
 ```bash
-brew upgrade --fetch-HEAD keys-layer   # HEAD install
-# or: brew upgrade keys-layer          # after a stable formula exists
+brew upgrade keys-layer                # stable
+# or: brew upgrade --fetch-HEAD keys-layer   # tracking main
 keys-layer-setup                       # refresh LaunchDaemon paths if needed
 ```
 

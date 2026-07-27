@@ -13,13 +13,15 @@ Minimal setup for **macOS**. Details: [prerequisite](./prerequisite.md) · [inst
 ```bash
 brew tap sothearasao/keys-layer https://github.com/sothearasao/keys-layer.git
 brew trust sothearasao/keys-layer
-brew install --HEAD sothearasao/keys-layer/keys-layer
+brew install sothearasao/keys-layer/keys-layer
 keys-layer-setup
 ```
 
 Grant **Accessibility** + **Input Monitoring** to  
 `$(brew --prefix)/opt/keys-layer/bin/keys-layer`  
 (see also `brew info sothearasao/keys-layer/keys-layer`).
+
+Latest from `main`: `brew install --HEAD sothearasao/keys-layer/keys-layer`
 
 More: [homebrew.md](./homebrew.md).
 

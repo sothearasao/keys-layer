@@ -2,22 +2,19 @@
 #
 #   brew tap sothearasao/keys-layer https://github.com/sothearasao/keys-layer.git
 #   brew trust sothearasao/keys-layer
-#   brew install --HEAD sothearasao/keys-layer/keys-layer
+#   brew install sothearasao/keys-layer/keys-layer
 #   keys-layer-setup
 #
-# After you publish a GitHub release tag, add stable `url` + `sha256` and users
-# can `brew install sothearasao/keys-layer/keys-layer` without --HEAD.
+# Latest from main:
+#   brew install --HEAD sothearasao/keys-layer/keys-layer
 
 class KeysLayer < Formula
   desc "Hold-to-layer keyboard remapper for macOS (Karabiner VirtualHID)"
   homepage "https://github.com/sothearasao/keys-layer"
+  url "https://github.com/sothearasao/keys-layer/archive/refs/tags/v0.1.0.tar.gz"
+  sha256 "e41d38c9218edb21d2f7f5c1f4f3978163984bc7295a27904d80cbfef2c72be1"
   license "MIT"
   head "https://github.com/sothearasao/keys-layer.git", branch: "main"
-
-  # Stable (uncomment after tagging v0.1.0 and filling sha256):
-  # url "https://github.com/sothearasao/keys-layer/archive/refs/tags/v0.1.0.tar.gz"
-  # sha256 "REPLACE_ME"
-  # version "0.1.0"
 
   depends_on :macos
   depends_on "rust" => :build

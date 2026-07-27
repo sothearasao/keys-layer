@@ -4,6 +4,7 @@ mod caps_lock;
 mod driverkit;
 mod hid_usage;
 mod media_keys;
+mod reload;
 
 use std::path::Path;
 

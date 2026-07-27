@@ -168,7 +168,8 @@ if [[ "${NO_DAEMON}" -eq 0 ]]; then
   echo "  tail -20 /var/log/keys-layer.log"
   echo "  sudo launchctl print system/${PLIST_LABEL} | head -20"
   echo
-  echo "Reload after config edits:"
+  echo "Config edits hot-reload automatically (see /var/log/keys-layer.log)."
+  echo "After rebuilding the binary:"
   echo "  sudo launchctl kickstart -k system/${PLIST_LABEL}"
 else
   echo "Run in foreground:"

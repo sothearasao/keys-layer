@@ -22,6 +22,7 @@ use keys_layer_core::{load_config, Engine, InputEvent, KeyName, OutputEvent};
 use super::caps_lock;
 use super::hid_usage::{key_name_to_usage, usage_to_key_name, PAGE_KEYBOARD};
 use super::media_keys;
+use super::reload::{self, ReloadHandles};
 
 const VALUE_RELEASE: u64 = 0;
 const VALUE_PRESS: u64 = 1;
@@ -44,13 +45,16 @@ pub fn run(config_path: &Path) -> Result<(), String> {
 
     let config = load_config(config_path).map_err(|e| e.to_string())?;
     let device_patterns = config.settings.devices.clone();
-    let f_row_media_hashes = device_hashes_matching(&config.settings.f_row_media_devices);
-    if !f_row_media_hashes.is_empty() {
-        eprintln!(
-            "F-row media (Fn/Globe) enabled for {} device(s)",
-            f_row_media_hashes.len()
-        );
+    let f_row_media_hashes = Arc::new(Mutex::new(device_hashes_matching(
+        &config.settings.f_row_media_devices,
+    )));
+    {
+        let n = f_row_media_hashes.lock().expect("media lock").len();
+        if n > 0 {
+            eprintln!("F-row media (Fn/Globe) enabled for {n} device(s)");
+        }
     }
+    let devices = Arc::new(Mutex::new(device_patterns.clone()));
     let suppress_native_caps = config.is_native_disabled(&KeyName::new("caps_lock"));
     let engine = Arc::new(Mutex::new(Engine::new(config)));
     let started = Instant::now();
@@ -99,10 +103,19 @@ pub fn run(config_path: &Path) -> Result<(), String> {
         emit_outputs(&outputs);
     });
 
+    reload::start(
+        config_path.to_path_buf(),
+        Arc::clone(&engine),
+        ReloadHandles {
+            f_row_media_hashes: Arc::clone(&f_row_media_hashes),
+            devices: Arc::clone(&devices),
+        },
+    );
+
     eprintln!(
         "keys-layer (DriverKit) running — {}\n\
          Hold F / Caps for layers. Requires sudo + Karabiner VirtualHIDDevice.\n\
-         Ctrl-C to quit.",
+         Config hot-reloads on save (or SIGHUP). Ctrl-C to quit.",
         config_path.display()
     );
 
@@ -134,7 +147,10 @@ pub fn run(config_path: &Path) -> Result<(), String> {
         // F1–F12: on configured devices, apply Mac Fn/Globe media behavior.
         // Other keyboards keep real F-keys.
         if is_function_row(event.code) {
-            let media_device = f_row_media_hashes.contains(&event.device_hash);
+            let media_device = f_row_media_hashes
+                .lock()
+                .expect("media lock")
+                .contains(&event.device_hash);
             if media_device && media_keys::want_media_for_f_row() {
                 if let Some((page, code)) = media_keys::media_hid_for_f_usage(event.code) {
                     emit_hid(page, code, event.value);
@@ -204,7 +220,7 @@ fn wait_for_sink(timeout: Duration) -> bool {
 }
 
 /// Hashes of connected keyboards whose product name matches any pattern.
-fn device_hashes_matching(patterns: &[String]) -> HashSet<u64> {
+pub(super) fn device_hashes_matching(patterns: &[String]) -> HashSet<u64> {
     if patterns.is_empty() {
         return HashSet::new();
     }
@@ -297,7 +313,7 @@ fn emit_hid(page: u32, code: u32, value: u64) {
     }
 }
 
-fn emit_outputs(outputs: &[OutputEvent]) {
+pub(super) fn emit_outputs(outputs: &[OutputEvent]) {
     for out in outputs {
         let (name, value) = match out {
             OutputEvent::KeyDown(k) | OutputEvent::KeyRepeat(k) => (k, VALUE_PRESS),

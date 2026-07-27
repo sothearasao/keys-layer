@@ -25,7 +25,24 @@ Or pass a path explicitly:
 sudo keys-layer /path/to/config.toml
 ```
 
-Format is **TOML**. After editing, restart `keys-layer` (Ctrl-C, then `sudo keys-layer` again). There is no hot-reload yet.
+Format is **TOML**.
+
+### Hot-reload
+
+While `keys-layer` is running, edits to the config file are picked up automatically (file watch, ~0.5s). You can also send:
+
+```bash
+sudo kill -HUP $(pgrep -f '/usr/local/bin/keys-layer')
+```
+
+| Result | Log (`/var/log/keys-layer.log` or terminal) |
+|--------|-----------------------------------------------|
+| Success | `config reloaded OK — …` |
+| Failure | `config reload FAILED — keeping previous config` + parse error |
+
+Bad TOML does **not** crash the process; the previous config stays active.
+
+> Changing `settings.devices` (which keyboards are seized) still needs a full restart — hot-reload warns if that field changes.
 
 ---
 

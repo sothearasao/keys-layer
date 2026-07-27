@@ -43,8 +43,8 @@ tail -20 /var/log/keys-layer.log
 
 You want `keys-layer (DriverKit) running` and **no** `not permitted`.
 
-Edit config: `~/.config/keys-layer/config.toml`  
-Reload: `sudo launchctl kickstart -k system/local.keys-layer`
+Edit config: `~/.config/keys-layer/config.toml` — **hot-reloads on save** (watch the log for `config reloaded OK` or `FAILED`).  
+Rebuild binary: `./scripts/install.sh` or `sudo launchctl kickstart -k system/local.keys-layer`
 
 ---
 

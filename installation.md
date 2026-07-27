@@ -48,13 +48,15 @@ tail -20 /var/log/keys-layer.log
 # no: IOHIDDeviceOpen … not permitted
 ```
 
-Reload after config or rebuild:
+Reload after **rebuild** (binary change):
 
 ```bash
 ./scripts/install.sh          # rebuild + reinstall daemon
 # or just:
 sudo launchctl kickstart -k system/local.keys-layer
 ```
+
+Config edits hot-reload automatically — see [configuration.md](./configuration.md#hot-reload).
 
 ---
 

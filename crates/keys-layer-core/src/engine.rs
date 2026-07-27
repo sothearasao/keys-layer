@@ -68,7 +68,15 @@ impl Engine {
         }
     }
 
-    pub fn reload(&mut self, config: Config) {
+    /// Replace config and reset layer state.
+    ///
+    /// Returns KeyUp events for any outputs that were still held so the OS
+    /// does not keep keys stuck across the reload.
+    pub fn reload(&mut self, config: Config) -> Vec<OutputEvent> {
+        let mut out = Vec::new();
+        for key in self.output_down.drain() {
+            out.push(OutputEvent::KeyUp(key));
+        }
         let base = config.settings.base_layer.clone();
         self.config = config;
         self.layer_stack = vec![base];
@@ -76,8 +84,8 @@ impl Engine {
         self.active_holds.clear();
         self.physical_down.clear();
         self.resolved_while_held.clear();
-        self.output_down.clear();
         self.physical_to_output.clear();
+        out
     }
 
     pub fn current_layer(&self) -> &str {
@@ -534,5 +542,27 @@ mod tests {
         assert_eq!(out, vec![OutputEvent::KeyDown(KeyName::new("a"))]);
         let out = eng.handle(InputEvent::KeyUp(KeyName::new("a")), 260);
         assert_eq!(out, vec![OutputEvent::KeyUp(KeyName::new("a"))]);
+    }
+
+    #[test]
+    fn reload_releases_held_outputs() {
+        let mut eng = demo_engine();
+        eng.handle(InputEvent::KeyDown(KeyName::new("f")), 0);
+        assert!(eng.tick(200).is_empty());
+        eng.handle(InputEvent::KeyDown(KeyName::new("j")), 250);
+
+        let cfg = Config::from_toml_str(
+            r#"
+            [layer.base]
+            f = { tap = "f", hold = "mod_f" }
+
+            [layer.mod_f]
+            j = "delete"
+            "#,
+        )
+        .unwrap();
+        let out = eng.reload(cfg);
+        assert_eq!(out, vec![OutputEvent::KeyUp(KeyName::new("delete"))]);
+        assert_eq!(eng.current_layer(), "base");
     }
 }

@@ -71,7 +71,9 @@ There should be **no** `IOHIDDeviceOpen … not permitted` lines. If remaps fail
 
 ## Reload (no reboot)
 
-After editing config or reinstalling the binary:
+**Config** hot-reloads on save (or `sudo kill -HUP $(pgrep -f keys-layer)`). Check `/var/log/keys-layer.log` for `config reloaded OK` / `FAILED`.
+
+After **reinstalling the binary**:
 
 ```bash
 # Re-grant Accessibility + Input Monitoring if the binary path changed, then:

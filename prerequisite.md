@@ -2,7 +2,7 @@
 
 Do these **before** installing `keys-layer`.
 
-Related: [installation](./installation.md) · [autostart](./autostart.md) · [uninstall](./uninstall.md) · [configuration](./configuration.md) · [README](./README.md)
+Related: [install](./install.md) · [installation](./installation.md) · [autostart](./autostart.md) · [uninstall](./uninstall.md) · [configuration](./configuration.md) · [README](./README.md)
 
 ---
 
@@ -69,17 +69,17 @@ You should see the daemon process and an activated pqrs extension.
 
 ## 2. Privacy permissions
 
-After you build `keys-layer` (see [installation](./installation.md)), add the **real binary** — not Terminal — to both lists:
+After you install `keys-layer` (see [installation](./installation.md) — usually `./scripts/install.sh`), add the **real binary** — not Terminal — to both lists:
 
-**Path:** `~/.cargo/bin/keys-layer`  
-(full path example: `/Users/YOUR_USER/.cargo/bin/keys-layer`)
+**Path:** `/usr/local/bin/keys-layer`  
+(older installs may use `~/.cargo/bin/keys-layer` — prefer the path `install.sh` printed)
 
 1. **System Settings → Privacy & Security → Accessibility**
 2. **System Settings → Privacy & Security → Input Monitoring**
 
 Enable the toggle for `keys-layer`.
 
-> After every `cargo install --force`, macOS may treat the binary as new.  
+> After every reinstall that replaces the binary, macOS may treat it as new.  
 > Remove it from both lists, add it again, or toggle off/on — then restart keys-layer.
 
 If the log shows `IOHIDDeviceOpen error: … not permitted`, Input Monitoring is missing or stale.

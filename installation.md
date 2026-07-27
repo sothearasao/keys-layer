@@ -1,81 +1,78 @@
 # Installation (macOS)
 
-Install and run `keys-layer`.
+Full install notes and troubleshooting.
 
-**Before this page:** complete **[prerequisite.md](./prerequisite.md)** (driver, permissions, quit Karabiner remapping).
+**Quickstart:** **[install.md](./install.md)**  
+**Before / driver detail:** [prerequisite.md](./prerequisite.md)
 
 Also: [autostart](./autostart.md) · [uninstall](./uninstall.md) · [configuration](./configuration.md) · [README](./README.md)
 
 ---
 
-## Quick path
-
-```text
-prerequisites → cargo install → config → sudo keys-layer
-                 (optional) autostart.md for login
-```
-
----
-
-## 1. Build and install the binary
+## Quick path (recommended)
 
 From the repo:
 
 ```bash
-cd /path/to/keys-layer
-cargo install --path crates/keys-layer --force
+./scripts/install.sh
 ```
 
-Installs to:
+That one command:
 
-```text
-~/.cargo/bin/keys-layer
+1. Builds a release binary → `/usr/local/bin/keys-layer`
+2. Creates `~/.config/keys-layer/config.toml` if missing (from `config.example.toml`)
+3. Installs the LaunchDaemon (`local.keys-layer`) so it starts at login
+4. Tries to disable **Karabiner-Core-Service** (keeps the VirtualHID daemon)
+
+Binary + config only (no daemon):
+
+```bash
+./scripts/install.sh --no-daemon
+sudo /usr/local/bin/keys-layer ~/.config/keys-layer/config.toml
 ```
 
-Ensure `~/.cargo/bin` is on your `PATH`.
+### After `install.sh` — still do these once
 
-Then re-check **Accessibility** and **Input Monitoring** for that binary ([prerequisite.md](./prerequisite.md#2-privacy-permissions)).
+macOS will not automate them:
+
+1. **Driver extension** — System Settings → General → Login Items & Extensions → Driver Extensions → enable VirtualHID  
+2. **Privacy** — Accessibility **and** Input Monitoring for `/usr/local/bin/keys-layer`  
+   (remove any old `~/.cargo/bin/keys-layer` entries)  
+3. Confirm VirtualHID **daemon** is running; leave Karabiner-Elements remapping quit  
+
+Verify:
+
+```bash
+tail -20 /var/log/keys-layer.log
+# expect: keys-layer (DriverKit) running …
+# no: IOHIDDeviceOpen … not permitted
+```
+
+Reload after config or rebuild:
+
+```bash
+./scripts/install.sh          # rebuild + reinstall daemon
+# or just:
+sudo launchctl kickstart -k system/local.keys-layer
+```
 
 ---
 
-## 2. Create a config
+## Manual install (optional)
+
+If you prefer not to use the script:
 
 ```bash
+cargo build --release -p keys-layer
+sudo cp target/release/keys-layer /usr/local/bin/keys-layer
+
 mkdir -p ~/.config/keys-layer
-cp config.example.toml ~/.config/keys-layer/config.toml
+cp -n config.example.toml ~/.config/keys-layer/config.toml
+
+# LaunchDaemon: see autostart.md
 ```
 
-Edit `~/.config/keys-layer/config.toml` as you like. Details: [configuration.md](./configuration.md).
-
-With no arguments, `keys-layer` loads that default path.
-
----
-
-## 3. Run (foreground)
-
-Must use **sudo**:
-
-```bash
-sudo keys-layer
-# or
-sudo keys-layer ~/.config/keys-layer/config.toml
-```
-
-Success looks like:
-
-```text
-keys-layer (DriverKit) running — /Users/…/.config/keys-layer/config.toml
-Hold F / Caps for layers. Requires sudo + Karabiner VirtualHIDDevice.
-Ctrl-C to quit.
-```
-
-If remaps do nothing, check the terminal (or `/var/log/keys-layer.log` if using autostart) for `not permitted` / exclusive access — see [Troubleshooting](#troubleshooting).
-
----
-
-## 4. Optional — start at login
-
-See **[autostart.md](./autostart.md)** (LaunchDaemon install, reload, stop).
+Or `cargo install --path crates/keys-layer --force` (binary under `~/.cargo/bin/`) — then point the plist at that path yourself.
 
 ---
 
@@ -86,13 +83,12 @@ See **[autostart.md](./autostart.md)** (LaunchDaemon install, reload, stop).
 Almost always: keyboards were **not seized**.
 
 ```bash
-# LaunchDaemon log:
 tail -40 /var/log/keys-layer.log
 ```
 
 | Log line | Fix |
 |----------|-----|
-| `IOHIDDeviceOpen … not permitted` | Re-add binary to **Input Monitoring** (+ Accessibility); quit KE remapping ([prerequisite](./prerequisite.md)) |
+| `IOHIDDeviceOpen … not permitted` | Re-add **`/usr/local/bin/keys-layer`** to Input Monitoring (+ Accessibility); quit KE remapping ([prerequisite](./prerequisite.md)) |
 | `exclusive access` / device already open | Quit Karabiner-Elements Core-Service ([prerequisite](./prerequisite.md#3-quit-karabiner-elements-remapping)) |
 | `connect_failed asio.system:2` | Run as root / start VirtualHID daemon / check driverkit version |
 
@@ -100,25 +96,23 @@ tail -40 /var/log/keys-layer.log
 
 | Cause | Fix |
 |-------|-----|
-| Not root | `sudo keys-layer` (LaunchDaemon already runs as root) |
+| Not root | LaunchDaemon runs as root; foreground needs `sudo` |
 | Daemon not running | Start VirtualHIDDevice-Daemon or open KE once |
 | Wrong crate vs daemon | `karabiner-driverkit` **0.3.x** with KE; **0.4.x** needs VHID **v8.0.0** |
 
 ### `DriverKit virtual keyboard not ready`
 
-Daemon not ready or client couldn’t connect. Restart the daemon, use `sudo`, confirm the driver extension is activated.
+Daemon not ready or client couldn’t connect. Restart the daemon, confirm the driver extension is activated.
 
 ### Caps Lock still toggles
 
 Use `native = "disable"` on Caps in config. Confirm no second remapper is running.
 
-### After `cargo install --force` nothing works
+### After reinstall nothing works
 
-Re-grant Accessibility + Input Monitoring for `~/.cargo/bin/keys-layer`, then:
+TCC is path-based. Grant Accessibility + Input Monitoring to the **new** binary path (`/usr/local/bin/keys-layer`), then:
 
 ```bash
-sudo keys-layer
-# or, if using autostart:
 sudo launchctl kickstart -k system/local.keys-layer
 ```
 
@@ -128,6 +122,6 @@ LaunchDaemon bootstrap / plist errors: [autostart.md](./autostart.md#autostart-t
 
 ## Next
 
-- Autostart at login: [autostart.md](./autostart.md)  
 - Config: [configuration.md](./configuration.md)  
-- Remove everything: [uninstall.md](./uninstall.md)
+- Autostart details: [autostart.md](./autostart.md)  
+- Remove everything: `./scripts/uninstall.sh` or [uninstall.md](./uninstall.md)

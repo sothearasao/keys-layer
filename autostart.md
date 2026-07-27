@@ -2,43 +2,44 @@
 
 Run `keys-layer` automatically at login (as root), without keeping a terminal open.
 
-**Before this:** [prerequisite.md](./prerequisite.md) and [installation.md](./installation.md) (binary + config working with `sudo keys-layer`).
+**Recommended:** `./scripts/install.sh` installs the daemon for you.
+
+**Before this:** [prerequisite.md](./prerequisite.md) and a working binary ([installation.md](./installation.md)).
 
 Also: [uninstall](./uninstall.md) · [README](./README.md)
 
 ---
 
-## Template
+## Via install script
 
-Repo file: [`packaging/local.keys-layer.plist`](./packaging/local.keys-layer.plist)
-
-### Edit paths
-
-Use **absolute** paths — no `~`:
-
-```xml
-<string>/Users/YOUR_USER/.cargo/bin/keys-layer</string>
-<string>/Users/YOUR_USER/.config/keys-layer/config.toml</string>
+```bash
+./scripts/install.sh
 ```
 
-The file must end with a full closing tag:
+Generates a plist from [`packaging/local.keys-layer.plist.in`](./packaging/local.keys-layer.plist.in) with your absolute paths:
 
-```xml
-</dict>
-</plist>
-```
-
-A truncated `</plist` (missing `>`) causes `Bootstrap failed: 5: Input/output error`.
+- Binary: `/usr/local/bin/keys-layer`
+- Config: `/Users/YOU/.config/keys-layer/config.toml`
 
 ---
 
-## Install and start
+## Manual install
+
+Copy the template and replace placeholders (or edit after `sed`):
 
 ```bash
-plutil -lint packaging/local.keys-layer.plist
+BIN=/usr/local/bin/keys-layer
+CFG="$HOME/.config/keys-layer/config.toml"
+
+sed \
+  -e "s|__KEYS_LAYER_BIN__|${BIN}|g" \
+  -e "s|__KEYS_LAYER_CONFIG__|${CFG}|g" \
+  packaging/local.keys-layer.plist.in > /tmp/local.keys-layer.plist
+
+plutil -lint /tmp/local.keys-layer.plist
 # expect: OK
 
-sudo cp packaging/local.keys-layer.plist /Library/LaunchDaemons/local.keys-layer.plist
+sudo cp /tmp/local.keys-layer.plist /Library/LaunchDaemons/local.keys-layer.plist
 sudo chown root:wheel /Library/LaunchDaemons/local.keys-layer.plist
 sudo chmod 644 /Library/LaunchDaemons/local.keys-layer.plist
 
@@ -46,6 +47,8 @@ sudo launchctl bootout system/local.keys-layer 2>/dev/null
 sudo launchctl bootstrap system /Library/LaunchDaemons/local.keys-layer.plist
 sudo launchctl kickstart -k system/local.keys-layer
 ```
+
+The file must end with a full closing tag `</plist>` (a truncated `</plist` causes `Bootstrap failed: 5: Input/output error`).
 
 ---
 
@@ -68,10 +71,10 @@ There should be **no** `IOHIDDeviceOpen … not permitted` lines. If remaps fail
 
 ## Reload (no reboot)
 
-After editing config or `cargo install --force`:
+After editing config or reinstalling the binary:
 
 ```bash
-# Re-grant Accessibility + Input Monitoring if you reinstalled the binary, then:
+# Re-grant Accessibility + Input Monitoring if the binary path changed, then:
 sudo launchctl kickstart -k system/local.keys-layer
 ```
 
@@ -94,7 +97,7 @@ sudo launchctl bootout system/local.keys-layer
 sudo rm -f /Library/LaunchDaemons/local.keys-layer.plist
 ```
 
-Full removal (binary + config too): [uninstall.md](./uninstall.md).
+Full removal: `./scripts/uninstall.sh` or [uninstall.md](./uninstall.md).
 
 ---
 
@@ -110,7 +113,7 @@ plutil -lint /Library/LaunchDaemons/local.keys-layer.plist
 
 | Result | Fix |
 |--------|-----|
-| EOF / parse error | Fix XML (`</plist>`); re-copy from `packaging/local.keys-layer.plist` |
+| EOF / parse error | Fix XML (`</plist>`); regenerate via `./scripts/install.sh` |
 | `OK` but bootstrap still fails | `bootout` then `bootstrap` again; confirm `Label` is `local.keys-layer` |
 
 Also check: absolute paths, files exist, owner `root:wheel`, mode `644`.

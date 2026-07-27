@@ -6,28 +6,37 @@ Related: [prerequisite](./prerequisite.md) · [installation](./installation.md) 
 
 ---
 
-## 1. Stop the LaunchDaemon (if you installed one)
+## Script (recommended)
+
+```bash
+./scripts/uninstall.sh           # stop daemon, remove binary; keep config
+./scripts/uninstall.sh --purge   # also delete ~/.config/keys-layer
+```
+
+Removes:
+
+- LaunchDaemon `local.keys-layer`
+- `/usr/local/bin/keys-layer` (and `~/.cargo/bin/keys-layer` if present)
+
+Does **not** remove Karabiner VirtualHID (shared with other tools).
+
+---
+
+## Manual steps
+
+### 1. Stop the LaunchDaemon
 
 ```bash
 sudo launchctl bootout system/local.keys-layer 2>/dev/null
 sudo rm -f /Library/LaunchDaemons/local.keys-layer.plist
 ```
 
-Confirm it is gone:
+### 2. Remove the binary (and optionally config)
 
 ```bash
-sudo launchctl print system/local.keys-layer 2>&1 | head -5
-# expect an error / not found
-```
-
-If you were running it in a terminal instead, press **Ctrl-C**.
-
----
-
-## 2. Remove the binary and config
-
-```bash
+sudo rm -f /usr/local/bin/keys-layer
 rm -f ~/.cargo/bin/keys-layer
+# optional:
 rm -rf ~/.config/keys-layer
 ```
 
@@ -36,26 +45,20 @@ Optional — remove privacy entries:
 **System Settings → Privacy & Security → Accessibility** and **Input Monitoring**  
 → select `keys-layer` → **−**
 
----
-
-## 3. Optional — remove Karabiner VirtualHID
+### 3. Optional — remove Karabiner VirtualHID
 
 Only if you no longer need it for anything else (Karabiner-Elements, kanata, etc.).
 
-- **Karabiner-Elements:** use its uninstaller / “Uninstall Karabiner-Elements” from the app menu, or remove the app and follow KE’s docs.  
+- **Karabiner-Elements:** use its uninstaller from the app menu.  
 - **Standalone VirtualHIDDevice:**
 
 ```bash
 sudo /Applications/.Karabiner-VirtualHIDDevice-Manager.app/Contents/MacOS/Karabiner-VirtualHIDDevice-Manager deactivate
 ```
 
-Then remove the manager app / pkg leftovers if you want a full cleanup.
-
-Leaving the driver installed is fine if you might reinstall `keys-layer` later.
-
 ---
 
 ## Reinstall later
 
 1. [prerequisite.md](./prerequisite.md)  
-2. [installation.md](./installation.md)
+2. `./scripts/install.sh`

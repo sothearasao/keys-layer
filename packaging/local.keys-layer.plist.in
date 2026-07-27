@@ -6,8 +6,8 @@
   <string>local.keys-layer</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/theara/.cargo/bin/keys-layer</string>
-    <string>/Users/theara/.config/keys-layer/config.toml</string>
+    <string>__KEYS_LAYER_BIN__</string>
+    <string>__KEYS_LAYER_CONFIG__</string>
   </array>
   <key>RunAtLoad</key>
   <true/>

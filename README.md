@@ -15,19 +15,21 @@ Inspired by [Kanata](https://github.com/jtroo/kanata), but focused on a small fe
 
 ## Quick start
 
-1. **[prerequisite.md](./prerequisite.md)** — driver, permissions, quit Karabiner remapping  
-2. **[installation.md](./installation.md)** — build, config, run  
-3. **[autostart.md](./autostart.md)** — optional LaunchDaemon (start at login)  
-4. **[configuration.md](./configuration.md)** — TOML reference  
-
-To remove everything: **[uninstall.md](./uninstall.md)**
+See **[install.md](./install.md)** (short checklist).
 
 ```bash
-# after install
-sudo keys-layer
-# or
-sudo keys-layer ~/.config/keys-layer/config.toml
+./scripts/install.sh
+# grant Accessibility + Input Monitoring to /usr/local/bin/keys-layer
+tail -20 /var/log/keys-layer.log
 ```
+
+| Doc | When |
+|-----|------|
+| [install.md](./install.md) | First-time quickstart |
+| [prerequisite.md](./prerequisite.md) | Driver / permissions deep dive |
+| [installation.md](./installation.md) | Full install + troubleshooting |
+| [configuration.md](./configuration.md) | TOML reference |
+| [uninstall.md](./uninstall.md) | Remove (`./scripts/uninstall.sh`) |
 
 Default config path (when no argument is given):
 

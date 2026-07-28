@@ -53,6 +53,9 @@ pub struct Engine {
     output_down: HashSet<KeyName>,
     /// Maps physical key → outputs currently held for that physical key.
     physical_to_output: std::collections::HashMap<KeyName, OutputKeys>,
+    /// Modifiers KeyUp'd while a hold-layer is active so remaps are not
+    /// chorded with Cmd/Shift/etc. Restored when the layer is left (if still held).
+    suspended_modifiers: HashSet<KeyName>,
 }
 
 impl Engine {
@@ -68,6 +71,7 @@ impl Engine {
             sequence_done: HashSet::new(),
             output_down: HashSet::new(),
             physical_to_output: std::collections::HashMap::new(),
+            suspended_modifiers: HashSet::new(),
         }
     }
 
@@ -89,6 +93,7 @@ impl Engine {
         self.resolved_while_held.clear();
         self.sequence_done.clear();
         self.physical_to_output.clear();
+        self.suspended_modifiers.clear();
         out
     }
 
@@ -133,6 +138,44 @@ impl Engine {
         self.physical_down.iter().any(|k| k.is_modifier())
     }
 
+    /// Temporarily release held modifiers so layer remaps are not Cmd/Shift-chorded.
+    fn suspend_modifiers(&mut self) -> Vec<OutputEvent> {
+        let mods: Vec<KeyName> = self
+            .physical_down
+            .iter()
+            .filter(|k| k.is_modifier())
+            .cloned()
+            .collect();
+        let mut out = Vec::new();
+        for m in mods {
+            if self.output_down.remove(&m) {
+                out.push(OutputEvent::KeyUp(m.clone()));
+                self.suspended_modifiers.insert(m);
+            }
+        }
+        out
+    }
+
+    /// Re-press modifiers that are still physically held after leaving hold layers.
+    fn restore_modifiers(&mut self) -> Vec<OutputEvent> {
+        let mut out = Vec::new();
+        let suspended: Vec<KeyName> = self.suspended_modifiers.drain().collect();
+        for m in suspended {
+            if !self.physical_down.contains(&m) {
+                // Physical key already released while suspended; drop tracking.
+                self.physical_to_output.remove(&m);
+                continue;
+            }
+            if self.output_down.insert(m.clone()) {
+                out.push(OutputEvent::KeyDown(m.clone()));
+            }
+            self.physical_to_output
+                .entry(m.clone())
+                .or_insert_with(|| OutputKeys::Single(m));
+        }
+        out
+    }
+
     /// `native = "disable"` for this physical key (any layer).
     pub fn is_native_disabled(&self, key: &KeyName) -> bool {
         self.config.is_native_disabled(key)
@@ -148,13 +191,18 @@ impl Engine {
         }
 
         let pending = self.pending.take().expect("pending checked");
+        let mut out = Vec::new();
+        // First hold-layer: drop physical modifiers so e.g. Cmd+F hold → layer
+        // then J is Delete, not Cmd+Delete / stuck typing F.
+        if self.active_holds.is_empty() {
+            out.extend(self.suspend_modifiers());
+        }
         self.layer_stack.push(pending.layer.clone());
         self.active_holds.push(ActiveHold {
             physical: pending.physical,
             layer: pending.layer,
         });
-        // Hold activated: no tap output.
-        Vec::new()
+        out
     }
 
     pub fn handle(&mut self, event: InputEvent, now_ms: u64) -> Vec<OutputEvent> {
@@ -219,7 +267,7 @@ impl Engine {
                 hold_ms,
                 native,
             }) => {
-                let ms = self.config.resolve_hold_ms(&layer, hold_ms);
+                let mut ms = self.config.resolve_hold_ms(&layer, hold_ms);
                 // native = "enable" (default) + no tap → fire the physical key on
                 // quick release. native = "disable" → silence unless tap is set.
                 let tap = match (tap, native) {
@@ -227,21 +275,17 @@ impl Engine {
                     (None, NativeMode::Enable) => Some(key.clone()),
                     (None, NativeMode::Disable) => None,
                 };
-                // Cmd+F / Ctrl+C / etc.: never start a hold while a modifier is
-                // already down — race with hold_ms makes shortcuts flaky and can
-                // leave modifiers stuck when KeyDown was passthrough.
+                // Prefer tap for Cmd+F / Ctrl+C (slightly longer deadline), but still
+                // allow hold-to-layer if the key is held long enough.
                 if self.modifier_physically_held() {
-                    if let Some(t) = tap {
-                        out.extend(self.press_output(key, OutputKeys::Single(t)));
-                    }
-                } else {
-                    self.pending = Some(PendingHold {
-                        physical: key,
-                        tap,
-                        layer: hold,
-                        deadline_ms: now_ms.saturating_add(ms),
-                    });
+                    ms = ms.saturating_mul(2).max(ms.saturating_add(120));
                 }
+                self.pending = Some(PendingHold {
+                    physical: key,
+                    tap,
+                    layer: hold,
+                    deadline_ms: now_ms.saturating_add(ms),
+                });
             }
             Some(KeyBinding::Remap(target)) => {
                 out.extend(self.press_output(key, target));
@@ -264,6 +308,12 @@ impl Engine {
             return Vec::new();
         }
 
+        // Modifier was already KeyUp'd when the hold-layer activated.
+        if self.suspended_modifiers.remove(&key) {
+            self.physical_to_output.remove(&key);
+            return Vec::new();
+        }
+
         // Cancel / resolve pending hold on this physical key.
         if let Some(pending) = &self.pending {
             if pending.physical == key {
@@ -274,12 +324,17 @@ impl Engine {
                 }
                 // Edge case: released exactly when deadline passed but tick hasn't run.
                 // Treat as hold activate then immediately leave.
+                let mut out = Vec::new();
+                if self.active_holds.is_empty() {
+                    out.extend(self.suspend_modifiers());
+                }
                 self.layer_stack.push(pending.layer.clone());
                 self.active_holds.push(ActiveHold {
                     physical: pending.physical.clone(),
                     layer: pending.layer,
                 });
-                return self.leave_hold_for(&key);
+                out.extend(self.leave_hold_for(&key));
+                return out;
             }
         }
 
@@ -333,6 +388,9 @@ impl Engine {
             self.layer_stack.push(base);
         }
 
+        if self.active_holds.is_empty() {
+            return self.restore_modifiers();
+        }
         Vec::new()
     }
 
@@ -706,23 +764,56 @@ mod tests {
     }
 
     #[test]
-    fn cmd_plus_hold_key_taps_immediately_no_layer() {
+    fn cmd_plus_hold_key_quick_tap_is_find() {
         let mut eng = demo_engine();
-        let out = eng.handle(InputEvent::KeyDown(KeyName::new("left_meta")), 0);
-        assert_eq!(out, vec![OutputEvent::KeyDown(KeyName::new("left_meta"))]);
-
-        // Cmd held + F: must not start hold (would race Cmd+F Find).
-        let out = eng.handle(InputEvent::KeyDown(KeyName::new("f")), 10);
-        assert_eq!(out, vec![OutputEvent::KeyDown(KeyName::new("f"))]);
+        eng.handle(InputEvent::KeyDown(KeyName::new("left_meta")), 0);
+        eng.handle(InputEvent::KeyDown(KeyName::new("f")), 10);
+        // Quick release before (extended) hold deadline → tap f while Cmd held.
+        let out = eng.handle(InputEvent::KeyUp(KeyName::new("f")), 50);
+        assert_eq!(
+            out,
+            vec![
+                OutputEvent::KeyDown(KeyName::new("f")),
+                OutputEvent::KeyUp(KeyName::new("f")),
+            ]
+        );
         assert_eq!(eng.current_layer(), "base");
-        assert!(eng.tick(500).is_empty());
-        assert_eq!(eng.current_layer(), "base");
-
-        let out = eng.handle(InputEvent::KeyUp(KeyName::new("f")), 20);
-        assert_eq!(out, vec![OutputEvent::KeyUp(KeyName::new("f"))]);
-
-        let out = eng.handle(InputEvent::KeyUp(KeyName::new("left_meta")), 30);
+        let out = eng.handle(InputEvent::KeyUp(KeyName::new("left_meta")), 60);
         assert_eq!(out, vec![OutputEvent::KeyUp(KeyName::new("left_meta"))]);
+    }
+
+    #[test]
+    fn cmd_then_hold_f_then_j_is_delete_not_f() {
+        let mut eng = demo_engine();
+        eng.handle(InputEvent::KeyDown(KeyName::new("left_meta")), 0);
+        eng.handle(InputEvent::KeyDown(KeyName::new("f")), 10);
+
+        // Hold past extended deadline (mods double hold_ms: 200 → 400).
+        let out = eng.tick(500);
+        assert_eq!(out, vec![OutputEvent::KeyUp(KeyName::new("left_meta"))]);
+        assert_eq!(eng.current_layer(), "mod_f");
+
+        let out = eng.handle(InputEvent::KeyDown(KeyName::new("j")), 510);
+        assert_eq!(out, vec![OutputEvent::KeyDown(KeyName::new("delete"))]);
+
+        let out = eng.handle(InputEvent::KeyUp(KeyName::new("j")), 520);
+        assert_eq!(out, vec![OutputEvent::KeyUp(KeyName::new("delete"))]);
+
+        // Release F → leave layer and restore Cmd if still held.
+        let out = eng.handle(InputEvent::KeyUp(KeyName::new("f")), 530);
+        assert_eq!(out, vec![OutputEvent::KeyDown(KeyName::new("left_meta"))]);
+        assert_eq!(eng.current_layer(), "base");
+    }
+
+    #[test]
+    fn ctrl_then_hold_f_then_j_suspends_ctrl_too() {
+        let mut eng = demo_engine();
+        eng.handle(InputEvent::KeyDown(KeyName::new("left_control")), 0);
+        eng.handle(InputEvent::KeyDown(KeyName::new("f")), 10);
+        let out = eng.tick(500);
+        assert_eq!(out, vec![OutputEvent::KeyUp(KeyName::new("left_control"))]);
+        let out = eng.handle(InputEvent::KeyDown(KeyName::new("j")), 510);
+        assert_eq!(out, vec![OutputEvent::KeyDown(KeyName::new("delete"))]);
     }
 
     #[test]

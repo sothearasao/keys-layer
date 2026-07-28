@@ -22,6 +22,7 @@ extern "C" fn on_sighup(_: libc::c_int) {
 
 pub struct ReloadHandles {
     pub f_row_media_hashes: Arc<Mutex<std::collections::HashSet<u64>>>,
+    pub f_row_media_devices: Arc<Mutex<Vec<String>>>,
     pub devices: Arc<Mutex<Vec<String>>>,
 }
 
@@ -97,7 +98,8 @@ fn try_reload(
     };
 
     let new_devices = config.settings.devices.clone();
-    let new_media = device_hashes_matching(&config.settings.f_row_media_devices);
+    let new_media_patterns = config.settings.f_row_media_devices.clone();
+    let new_media = device_hashes_matching(&new_media_patterns);
     let suppress_caps = config.is_native_disabled(&KeyName::new("caps_lock"));
 
     let devices_changed = {
@@ -112,6 +114,7 @@ fn try_reload(
     emit_outputs(&releases);
 
     *handles.f_row_media_hashes.lock().expect("media lock") = new_media;
+    *handles.f_row_media_devices.lock().expect("media devices") = new_media_patterns;
     *handles.devices.lock().expect("devices lock") = new_devices;
 
     if suppress_caps {
@@ -121,8 +124,8 @@ fn try_reload(
     eprintln!("config reloaded OK — {}", config_path.display());
     if devices_changed {
         eprintln!(
-            "warning: settings.devices changed — restart keys-layer to reseize keyboards \
-             (hot-reload does not change which devices are grabbed)"
+            "note: settings.devices changed — newly matching keyboards will be \
+             seized within a few seconds; narrowing the list still needs a restart"
         );
     }
 }

@@ -9,13 +9,14 @@
 
 use std::collections::HashSet;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use karabiner_driverkit::{
-    driver_activated, fetch_devices, grab, is_sink_ready, register_device, release, send_key,
-    wait_key, DKEvent,
+    driver_activated, fetch_devices, grab, is_sink_ready, register_device, regrab_input,
+    release, release_input_only, send_key, wait_key, DKEvent,
 };
 use keys_layer_core::{load_config, Engine, InputEvent, KeyName, OutputEvent};
 
@@ -27,6 +28,9 @@ use super::reload::{self, ReloadHandles};
 const VALUE_RELEASE: u64 = 0;
 const VALUE_PRESS: u64 = 1;
 const VALUE_REPEAT: u64 = 2;
+
+/// Set by the hotplug thread before `release_input_only`; main loop regrabs instead of exiting.
+static HOTPLUG_RESEIZE: AtomicBool = AtomicBool::new(false);
 
 /// Run the DriverKit remapper until the process exits (or grab fails).
 pub fn run(config_path: &Path) -> Result<(), String> {
@@ -55,6 +59,7 @@ pub fn run(config_path: &Path) -> Result<(), String> {
         }
     }
     let devices = Arc::new(Mutex::new(device_patterns.clone()));
+    let f_row_media_devices = Arc::new(Mutex::new(config.settings.f_row_media_devices.clone()));
     let suppress_native_caps = config.is_native_disabled(&KeyName::new("caps_lock"));
     let engine = Arc::new(Mutex::new(Engine::new(config)));
     let started = Instant::now();
@@ -64,8 +69,9 @@ pub fn run(config_path: &Path) -> Result<(), String> {
         caps_lock::force_caps_lock_off();
     }
 
-    let seized = seize_devices(&device_patterns)?;
+    let (seized, initial_hashes) = seize_devices(&device_patterns)?;
     eprintln!("seized keyboards: {}", seized.join(", "));
+    let seized_hashes = Arc::new(Mutex::new(initial_hashes));
 
     if !grab() {
         return Err(
@@ -103,11 +109,19 @@ pub fn run(config_path: &Path) -> Result<(), String> {
         emit_outputs(&outputs);
     });
 
+    start_hotplug_watcher(
+        Arc::clone(&devices),
+        Arc::clone(&f_row_media_devices),
+        Arc::clone(&f_row_media_hashes),
+        Arc::clone(&seized_hashes),
+    );
+
     reload::start(
         config_path.to_path_buf(),
         Arc::clone(&engine),
         ReloadHandles {
             f_row_media_hashes: Arc::clone(&f_row_media_hashes),
+            f_row_media_devices: Arc::clone(&f_row_media_devices),
             devices: Arc::clone(&devices),
         },
     );
@@ -115,7 +129,8 @@ pub fn run(config_path: &Path) -> Result<(), String> {
     eprintln!(
         "keys-layer (DriverKit) running — {}\n\
          Hold F / Caps for layers. Requires sudo + Karabiner VirtualHIDDevice.\n\
-         Config hot-reloads on save (or SIGHUP). Ctrl-C to quit.",
+         Config hot-reloads on save (or SIGHUP). New keyboards are seized automatically.\n\
+         Ctrl-C to quit.",
         config_path.display()
     );
 
@@ -128,6 +143,17 @@ pub fn run(config_path: &Path) -> Result<(), String> {
         };
         let got = wait_key(&mut event);
         if got == 0 {
+            if HOTPLUG_RESEIZE.swap(false, Ordering::SeqCst) {
+                if regrab_input() {
+                    eprintln!("hotplug: reseized keyboards");
+                    continue;
+                }
+                return Err(
+                    "hotplug regrab failed — restart keys-layer \
+                     (sudo launchctl kickstart -k system/local.keys-layer)"
+                        .into(),
+                );
+            }
             return Err("input pipe closed (devices released)".into());
         }
 
@@ -220,27 +246,67 @@ fn wait_for_sink(timeout: Duration) -> bool {
 }
 
 /// Hashes of connected keyboards whose product name matches any pattern.
+/// Empty `patterns` → no matches (used for `f_row_media_devices = []`).
 pub(super) fn device_hashes_matching(patterns: &[String]) -> HashSet<u64> {
     if patterns.is_empty() {
         return HashSet::new();
     }
-    let available = fetch_devices();
-    let mut out = HashSet::new();
-    for device in &available {
-        let name = device.product_key.to_lowercase();
-        if patterns
-            .iter()
-            .any(|p| name.contains(&p.to_lowercase()))
-        {
-            out.insert(device.hash);
-        }
+    matching_devices(patterns)
+        .into_iter()
+        .map(|d| d.hash)
+        .collect()
+}
+
+fn is_virtual_hid_name(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    lower.contains("karabiner") || lower.contains("virtualhid")
+}
+
+fn matching_devices(patterns: &[String]) -> Vec<karabiner_driverkit::DeviceData> {
+    let available = fetch_devices()
+        .into_iter()
+        .filter(|d| !is_virtual_hid_name(&d.product_key))
+        .collect::<Vec<_>>();
+    if patterns.is_empty() {
+        return available;
     }
-    out
+    available
+        .into_iter()
+        .filter(|d| {
+            let name = d.product_key.to_lowercase();
+            patterns
+                .iter()
+                .any(|p| name.contains(&p.to_lowercase()))
+        })
+        .collect()
 }
 
 /// Register keyboards to seize.
 /// Empty `patterns` → all keyboards. Otherwise match product-name substrings.
-fn seize_devices(patterns: &[String]) -> Result<Vec<String>, String> {
+/// Returns (human-readable names, device hashes registered).
+fn seize_devices(patterns: &[String]) -> Result<(Vec<String>, HashSet<u64>), String> {
+    let matched = matching_devices(patterns);
+    if matched.is_empty() {
+        let available = fetch_devices()
+            .into_iter()
+            .filter(|d| !is_virtual_hid_name(&d.product_key))
+            .collect::<Vec<_>>();
+        if available.is_empty() {
+            return Err(
+                "no HID keyboards found (is the VirtualHIDDevice daemon running?)".into(),
+            );
+        }
+        if !patterns.is_empty() {
+            let names: Vec<_> = available.iter().map(|d| d.product_key.as_str()).collect();
+            return Err(format!(
+                "no keyboards matched devices = {patterns:?}\n\
+                 Connected: {}\n\
+                 Tip: use a product-name substring, e.g. devices = [\"Moonlander\"]",
+                names.join(", ")
+            ));
+        }
+    }
+
     if patterns.is_empty() {
         if !register_device("") {
             return Err(
@@ -249,42 +315,122 @@ fn seize_devices(patterns: &[String]) -> Result<Vec<String>, String> {
                     .into(),
             );
         }
-        return Ok(vec!["(all keyboards)".into()]);
+        let hashes: HashSet<u64> = matched.iter().map(|d| d.hash).collect();
+        let names: Vec<String> = matched.iter().map(|d| d.product_key.clone()).collect();
+        let label = if names.is_empty() {
+            vec!["(all keyboards)".into()]
+        } else {
+            names
+        };
+        return Ok((label, hashes));
     }
 
-    let available = fetch_devices();
-    if available.is_empty() {
-        return Err(
-            "no HID keyboards found (is the VirtualHIDDevice daemon running?)".into(),
-        );
-    }
-
-    let mut seized = Vec::new();
-    for pattern in patterns {
-        let pat = pattern.to_lowercase();
-        for device in available
-            .iter()
-            .filter(|d| d.product_key.to_lowercase().contains(&pat))
-        {
-            let hash_id = format!("0x{:X}", device.hash);
-            let ok = register_device(&hash_id) || register_device(&device.product_key);
-            if ok && !seized.iter().any(|s| s == &device.product_key) {
-                seized.push(device.product_key.clone());
+    let mut seized_names = Vec::new();
+    let mut hashes = HashSet::new();
+    for device in &matched {
+        let hash_id = format!("0x{:X}", device.hash);
+        let ok = register_device(&hash_id) || register_device(&device.product_key);
+        if ok {
+            hashes.insert(device.hash);
+            if !seized_names.iter().any(|s| s == &device.product_key) {
+                seized_names.push(device.product_key.clone());
             }
         }
     }
 
-    if seized.is_empty() {
-        let names: Vec<_> = available.iter().map(|d| d.product_key.as_str()).collect();
+    if seized_names.is_empty() {
         return Err(format!(
-            "no keyboards matched devices = {patterns:?}\n\
-             Connected: {}\n\
-             Tip: use a product-name substring, e.g. devices = [\"Moonlander\"]",
-            names.join(", ")
+            "failed to register devices matching {patterns:?}"
         ));
     }
 
-    Ok(seized)
+    Ok((seized_names, hashes))
+}
+
+/// Watch for newly connected keyboards and reseize without restarting the process.
+fn start_hotplug_watcher(
+    devices: Arc<Mutex<Vec<String>>>,
+    f_row_media_devices: Arc<Mutex<Vec<String>>>,
+    f_row_media_hashes: Arc<Mutex<HashSet<u64>>>,
+    seized_hashes: Arc<Mutex<HashSet<u64>>>,
+) {
+    thread::spawn(move || {
+        // Track by product name so hash churn / VirtualHID rebuilds do not loop.
+        let mut known_names: HashSet<String> = {
+            let matched = {
+                let patterns = devices.lock().expect("devices lock").clone();
+                matching_devices(&patterns)
+            };
+            matched.into_iter().map(|d| d.product_key).collect()
+        };
+
+        loop {
+            thread::sleep(Duration::from_secs(2));
+
+            let patterns = devices.lock().expect("devices lock").clone();
+            let matched = matching_devices(&patterns);
+
+            let newcomers: Vec<(u64, String)> = matched
+                .iter()
+                .filter(|d| !known_names.contains(&d.product_key))
+                .map(|d| (d.hash, d.product_key.clone()))
+                .collect();
+            if newcomers.is_empty() {
+                // Keep hash set in sync for devices we already know by name.
+                let mut known = seized_hashes.lock().expect("seized lock");
+                for d in &matched {
+                    known.insert(d.hash);
+                }
+                continue;
+            }
+
+            let mut known = seized_hashes.lock().expect("seized lock");
+            let mut new_names = Vec::new();
+
+            if patterns.is_empty() {
+                if !register_device("") {
+                    eprintln!("hotplug: register_device(all) failed");
+                    continue;
+                }
+                for (hash, name) in &newcomers {
+                    known.insert(*hash);
+                    known_names.insert(name.clone());
+                    new_names.push(name.clone());
+                }
+            } else {
+                for (hash, name) in &newcomers {
+                    let hash_id = format!("0x{:X}", hash);
+                    let ok = register_device(&hash_id) || register_device(name);
+                    if ok {
+                        known.insert(*hash);
+                        known_names.insert(name.clone());
+                        new_names.push(name.clone());
+                    }
+                }
+            }
+            drop(known);
+
+            if new_names.is_empty() {
+                continue;
+            }
+
+            new_names.sort();
+            new_names.dedup();
+            eprintln!(
+                "hotplug: new keyboard(s) — {} (reseizing…)",
+                new_names.join(", ")
+            );
+
+            let media_patterns = f_row_media_devices.lock().expect("media devices").clone();
+            *f_row_media_hashes.lock().expect("media hashes") =
+                device_hashes_matching(&media_patterns);
+
+            HOTPLUG_RESEIZE.store(true, Ordering::SeqCst);
+            release_input_only();
+            // Cooldown so a flaky regrab cannot spin.
+            thread::sleep(Duration::from_secs(3));
+        }
+    });
 }
 
 fn passthrough(event: &mut DKEvent) {

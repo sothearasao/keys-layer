@@ -91,8 +91,10 @@ Or `cargo install --path crates/keys-layer --force` (binary under `~/.cargo/bin/
 
 Almost always: keyboards were **not seized**.
 
+New boards plugged in after start are seized automatically within a few seconds (see log: `hotplug: new keyboard(s)`). If that fails, restart:
+
 ```bash
-tail -40 /var/log/keys-layer.log
+sudo launchctl kickstart -k system/local.keys-layer
 ```
 
 | Log line | Fix |

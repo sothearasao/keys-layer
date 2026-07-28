@@ -42,7 +42,7 @@ sudo kill -HUP $(pgrep -f '/usr/local/bin/keys-layer')
 
 Bad TOML does **not** crash the process; the previous config stays active.
 
-> Changing `settings.devices` (which keyboards are seized) still needs a full restart — hot-reload warns if that field changes.
+> Changing `settings.devices` (which keyboards are seized): newly matching boards are picked up within a few seconds; **narrowing** the list (dropping a keyboard) still needs a full restart.
 
 ---
 
@@ -207,9 +207,13 @@ caps = { tap = "escape", hold = "mod_caps", native = "disable", hold_ms = 100 }
 - Release the hold key → leave the layer  
 - No permanent layer switch in v1  
 
-#### Modifier shortcuts (Cmd+F, Ctrl+C, …)
+#### Modifier shortcuts (Cmd / Ctrl / Alt / Shift)
 
-If Ctrl / Alt / Shift / Cmd is **already held** when the hold-key goes down, keys-layer **skips the hold** and taps immediately. That keeps macOS shortcuts reliable when a letter (e.g. `f`) is also a hold-to-layer key, and avoids sticky modifiers.
+**All** modifiers (left/right Cmd, Ctrl, Alt/Option, Shift) share the same rules — not Cmd alone:
+
+1. Always tracked by the engine (avoids sticky modifiers).
+2. Hold-key deadline is slightly longer while any modifier is down, so quick shortcuts (Cmd+F, Ctrl+C, …) prefer tap.
+3. After the hold-layer activates, **every** held modifier is temporarily released so layer keys are not chorded (e.g. J → Delete, not Cmd+Delete / Ctrl+Delete). They are restored when you leave the layer if still physically held.
 
 #### Fast typing
 

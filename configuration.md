@@ -207,6 +207,10 @@ caps = { tap = "escape", hold = "mod_caps", native = "disable", hold_ms = 100 }
 - Release the hold key → leave the layer  
 - No permanent layer switch in v1  
 
+#### Modifier shortcuts (Cmd+F, Ctrl+C, …)
+
+If Ctrl / Alt / Shift / Cmd is **already held** when the hold-key goes down, keys-layer **skips the hold** and taps immediately. That keeps macOS shortcuts reliable when a letter (e.g. `f`) is also a hold-to-layer key, and avoids sticky modifiers.
+
 #### Fast typing
 
 If another key is pressed **before** `hold_ms`, the pending hold key is resolved as a **tap** first (so rolls like `fe` stay in order instead of becoming `ef`).

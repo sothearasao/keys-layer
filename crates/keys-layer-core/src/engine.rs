@@ -101,6 +101,12 @@ impl Engine {
 
     /// Whether the backend should swallow this physical key and route it through the engine.
     pub fn should_intercept(&self, key: &KeyName) -> bool {
+        // Modifiers must always go through the engine. If Cmd/Shift/etc. were
+        // passthrough on KeyDown and only intercepted after a hold starts, the
+        // KeyUp path desyncs and the modifier sticks (Cmd+F with F as hold-key).
+        if key.is_modifier() {
+            return true;
+        }
         // While a hold is undecided *or* a momentary layer is active, intercept
         // *all* keys. Mixing passthrough + engine for the same physical key
         // (down via passthrough, up while pending) swallows the KeyUp and the
@@ -121,6 +127,10 @@ impl Engine {
         self.config
             .binding(self.current_layer(), key)
             .is_some()
+    }
+
+    fn modifier_physically_held(&self) -> bool {
+        self.physical_down.iter().any(|k| k.is_modifier())
     }
 
     /// `native = "disable"` for this physical key (any layer).
@@ -217,12 +227,21 @@ impl Engine {
                     (None, NativeMode::Enable) => Some(key.clone()),
                     (None, NativeMode::Disable) => None,
                 };
-                self.pending = Some(PendingHold {
-                    physical: key,
-                    tap,
-                    layer: hold,
-                    deadline_ms: now_ms.saturating_add(ms),
-                });
+                // Cmd+F / Ctrl+C / etc.: never start a hold while a modifier is
+                // already down — race with hold_ms makes shortcuts flaky and can
+                // leave modifiers stuck when KeyDown was passthrough.
+                if self.modifier_physically_held() {
+                    if let Some(t) = tap {
+                        out.extend(self.press_output(key, OutputKeys::Single(t)));
+                    }
+                } else {
+                    self.pending = Some(PendingHold {
+                        physical: key,
+                        tap,
+                        layer: hold,
+                        deadline_ms: now_ms.saturating_add(ms),
+                    });
+                }
             }
             Some(KeyBinding::Remap(target)) => {
                 out.extend(self.press_output(key, target));
@@ -684,5 +703,33 @@ mod tests {
 
         let out = eng.handle(InputEvent::KeyUp(KeyName::new("m")), 260);
         assert!(out.is_empty());
+    }
+
+    #[test]
+    fn cmd_plus_hold_key_taps_immediately_no_layer() {
+        let mut eng = demo_engine();
+        let out = eng.handle(InputEvent::KeyDown(KeyName::new("left_meta")), 0);
+        assert_eq!(out, vec![OutputEvent::KeyDown(KeyName::new("left_meta"))]);
+
+        // Cmd held + F: must not start hold (would race Cmd+F Find).
+        let out = eng.handle(InputEvent::KeyDown(KeyName::new("f")), 10);
+        assert_eq!(out, vec![OutputEvent::KeyDown(KeyName::new("f"))]);
+        assert_eq!(eng.current_layer(), "base");
+        assert!(eng.tick(500).is_empty());
+        assert_eq!(eng.current_layer(), "base");
+
+        let out = eng.handle(InputEvent::KeyUp(KeyName::new("f")), 20);
+        assert_eq!(out, vec![OutputEvent::KeyUp(KeyName::new("f"))]);
+
+        let out = eng.handle(InputEvent::KeyUp(KeyName::new("left_meta")), 30);
+        assert_eq!(out, vec![OutputEvent::KeyUp(KeyName::new("left_meta"))]);
+    }
+
+    #[test]
+    fn modifiers_always_intercepted() {
+        let eng = demo_engine();
+        assert!(eng.should_intercept(&KeyName::new("left_meta")));
+        assert!(eng.should_intercept(&KeyName::new("left_shift")));
+        assert!(!eng.should_intercept(&KeyName::new("a")));
     }
 }

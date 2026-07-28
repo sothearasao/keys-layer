@@ -15,6 +15,21 @@ impl KeyName {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// Ctrl / Alt / Shift / Meta (either side).
+    pub fn is_modifier(&self) -> bool {
+        matches!(
+            self.0.as_str(),
+            "left_control"
+                | "right_control"
+                | "left_alt"
+                | "right_alt"
+                | "left_shift"
+                | "right_shift"
+                | "left_meta"
+                | "right_meta"
+        )
+    }
 }
 
 impl fmt::Display for KeyName {
@@ -46,8 +61,9 @@ fn normalize(name: &str) -> String {
         "rctrl" | "right_ctrl" => "right_control".to_string(),
         "alt" | "option" | "lalt" | "left_alt" | "left_option" => "left_alt".to_string(),
         "ralt" | "right_alt" | "right_option" | "opt" => "right_alt".to_string(),
-        "cmd" | "meta" | "win" | "lcmd" | "left_cmd" | "left_meta" => "left_meta".to_string(),
-        "rcmd" | "right_cmd" | "right_meta" => "right_meta".to_string(),
+        "cmd" | "command" | "meta" | "win" | "lcmd" | "left_cmd" | "left_command"
+        | "left_meta" => "left_meta".to_string(),
+        "rcmd" | "right_cmd" | "right_command" | "right_meta" => "right_meta".to_string(),
         "shift" | "lshift" | "left_shift" => "left_shift".to_string(),
         "rshift" | "right_shift" => "right_shift".to_string(),
         "fwd_delete" | "forward_del" | "del" => "forward_delete".to_string(),
@@ -66,5 +82,8 @@ mod tests {
         assert_eq!(KeyName::new("ESC").as_str(), "escape");
         assert_eq!(KeyName::new("caps").as_str(), "caps_lock");
         assert_eq!(KeyName::new("CapsLock").as_str(), "caps_lock");
+        assert_eq!(KeyName::new("command").as_str(), "left_meta");
+        assert!(KeyName::new("left_meta").is_modifier());
+        assert!(!KeyName::new("f").is_modifier());
     }
 }

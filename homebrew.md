@@ -17,7 +17,7 @@ brew install sothearasao/keys-layer/keys-layer
 keys-layer-setup
 ```
 
-Stable installs **v0.1.0** from the GitHub tag. For the latest `main` branch instead:
+Stable installs **v0.1.1** from the GitHub tag. For the latest `main` branch instead:
 
 ```bash
 brew install --HEAD sothearasao/keys-layer/keys-layer

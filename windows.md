@@ -8,9 +8,28 @@ Related: [configuration](./configuration.md) · [linux.md](./linux.md)
 
 ---
 
-## Build & run
+## Quick install
 
-On a Windows machine (PowerShell or cmd):
+From the repo root in PowerShell (needs [Rust](https://rustup.rs)):
+
+```powershell
+.\scripts\install-windows.ps1
+```
+
+This builds a release binary into `%LOCALAPPDATA%\keys-layer\keys-layer.exe`, creates `%APPDATA%\keys-layer\config.toml` if missing, registers a **logon** Scheduled Task, and starts it.
+
+```powershell
+.\scripts\install-windows.ps1 -NoAutostart   # binary + config only
+.\scripts\install-windows.ps1 -SkipBuild     # reuse existing release build
+.\scripts\uninstall-windows.ps1              # remove binary + task; keep config
+.\scripts\uninstall-windows.ps1 -PurgeConfig
+```
+
+If PowerShell blocks scripts: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
+
+---
+
+## Build & run (manual)
 
 ```powershell
 git clone https://github.com/sothearasao/keys-layer.git
@@ -61,15 +80,19 @@ f_row_media_devices = ["on"]   # any non-empty list enables media F-row
 
 ---
 
-## Autostart (optional)
+## Autostart
 
-Task Scheduler → create a task at logon:
+Preferred: `.\scripts\install-windows.ps1` (registers task `keys-layer` at logon).
 
-- Program: `C:\path\to\keys-layer.exe`
-- Arguments: (optional) path to `config.toml`
+Manual Task Scheduler → create a task at logon:
+
+- Program: `%LOCALAPPDATA%\keys-layer\keys-layer.exe`
 - Run only when user is logged on
 
-Or drop a shortcut in the Startup folder.
+```powershell
+Start-ScheduledTask -TaskName keys-layer
+Stop-ScheduledTask -TaskName keys-layer
+```
 
 ---
 

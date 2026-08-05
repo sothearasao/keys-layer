@@ -16,7 +16,7 @@ From the repo root in PowerShell (needs [Rust](https://rustup.rs)):
 .\scripts\install-windows.ps1
 ```
 
-This builds a release binary into `%LOCALAPPDATA%\keys-layer\keys-layer.exe`, creates `%APPDATA%\keys-layer\config.toml` if missing, registers a **logon** Scheduled Task, and starts it.
+This builds a release binary into `%LOCALAPPDATA%\keys-layer\keys-layer.exe`, creates `%APPDATA%\keys-layer\config.toml` if missing, registers a **logon** Scheduled Task, and starts it **without a console window**. Logs go to `%LOCALAPPDATA%\keys-layer\keys-layer.log` (when not launched from an existing terminal).
 
 ```powershell
 .\scripts\install-windows.ps1 -NoAutostart   # binary + config only

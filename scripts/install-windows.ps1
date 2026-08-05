@@ -108,8 +108,10 @@ if (-not $NoAutostart) {
 }
 
 Write-Host ""
+$LogPath = Join-Path $BinDir "keys-layer.log"
 Write-Host "==> done"
 Write-Host "    Edit config:  $ConfigPath  (hot-reloads on save)"
+Write-Host "    Log file:     $LogPath"
 Write-Host "    Uninstall:    .\scripts\uninstall-windows.ps1"
 if (-not $NoAutostart) {
     Write-Host "    Stop:         Stop-ScheduledTask -TaskName $TaskName"

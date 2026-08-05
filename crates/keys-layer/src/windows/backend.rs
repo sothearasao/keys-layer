@@ -109,8 +109,10 @@ pub fn run(config_path: &Path) -> Result<(), String> {
     eprintln!(
         "keys-layer (Windows/LLHOOK) running — {}\n\
          Physical keys → engine → SendInput. Config hot-reloads on save.\n\
-         Ctrl-C to quit.",
-        config_path.display()
+         Log: {}\n\
+         Stop: Stop-ScheduledTask -TaskName keys-layer   (or taskkill /IM keys-layer.exe)",
+        config_path.display(),
+        super::stdio::log_path_display()
     );
 
     // Message pump required for WH_KEYBOARD_LL.

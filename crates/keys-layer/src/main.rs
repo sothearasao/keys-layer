@@ -1,10 +1,15 @@
 //! keys-layer CLI — hold-to-layer keyboard remapper.
 
+#![cfg_attr(windows, windows_subsystem = "windows")]
+
 use std::env;
 use std::path::PathBuf;
 use std::process;
 
 fn main() {
+    #[cfg(windows)]
+    keys_layer::windows::init_process_io();
+
     let mut args = env::args().skip(1);
     let config_path = match args.next() {
         Some(p) => PathBuf::from(p),

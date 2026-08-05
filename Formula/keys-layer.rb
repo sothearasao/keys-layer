@@ -11,8 +11,8 @@
 class KeysLayer < Formula
   desc "Hold-to-layer keyboard remapper for macOS (Karabiner VirtualHID)"
   homepage "https://github.com/sothearasao/keys-layer"
-  url "https://github.com/sothearasao/keys-layer/archive/refs/tags/v0.1.2.tar.gz"
-  sha256 "63e9b4377ac06aeabb37f64ea68dd4c6e3b8e9d556c4f12a4394ae4deb35654a"
+  url "https://github.com/sothearasao/keys-layer/archive/refs/tags/v0.1.3.tar.gz"
+  sha256 "7289ed4fd2125e7ee5efb996d518a84bb0559a5b4e925b821922fdd036a8ba1c"
   license "MIT"
   head "https://github.com/sothearasao/keys-layer.git", branch: "main"
 

@@ -1,0 +1,16 @@
+[Unit]
+Description=keys-layer keyboard remapper
+Documentation=https://github.com/sothearasao/keys-layer
+After=default.target
+
+[Service]
+Type=simple
+ExecStart=__KEYS_LAYER_BIN__ __KEYS_LAYER_CONFIG__
+Restart=on-failure
+RestartSec=2
+
+# Soft realtime helps keep key latency low (best-effort).
+Nice=-5
+
+[Install]
+WantedBy=default.target

@@ -4,7 +4,7 @@ hold_ms = 200
 # Optional: only seize these keyboards (product-name substring).
 # Empty / omitted = all keyboards.
 # devices = ["Moonlander"]
-# Mac-style F1–F12 ↔ media (respects Fn/Globe + System Settings).
+# Mac-style F1–F12 ↔ media (macOS only; ignored on Linux).
 # Only these product-name substrings get it — other boards keep real F-keys.
 # F3/F4 stay as F-keys (no Mission Control / Spotlight via VirtualHID).
 # Set [] to disable. See configuration.md § F1–F12.

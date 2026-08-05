@@ -1,6 +1,6 @@
 # keys-layer
 
-A simple hold-to-layer keyboard remapper for **macOS**, written in Rust.
+A simple hold-to-layer keyboard remapper for **macOS**, **Linux**, and **Windows**, written in Rust.
 
 Inspired by [Kanata](https://github.com/jtroo/kanata), but focused on a small feature set and a plain **TOML** config.
 
@@ -10,10 +10,12 @@ Inspired by [Kanata](https://github.com/jtroo/kanata), but focused on a small fe
 - **Tap vs hold** — quick tap can emit a different key (or nothing)
 - **Holdable remaps** — layer keys like `j = "delete"` tap once or repeat while held
 - **Chords / sequences** — e.g. `k = ["left_alt", "delete"]` (Option+Delete) or `{ sequence = ["a", "b"] }`
-- **Config hot-reload** — save `config.toml` while running; success/failure is logged (no restart). Rebuild binary with `./scripts/install.sh`
+- **Config hot-reload** — save `config.toml` while running; success/failure is logged (no restart)
 - **Per-layer / per-key timing** — `hold_ms` on settings, layer, or key
 - **`native = "disable"`** — suppress physical key behavior (useful for Caps Lock)
-- **DriverKit backend** — uses [Karabiner-DriverKit-VirtualHIDDevice](https://github.com/pqrs-org/Karabiner-DriverKit-VirtualHIDDevice) (same approach as Kanata)
+- **macOS** — [Karabiner-DriverKit-VirtualHIDDevice](https://github.com/pqrs-org/Karabiner-DriverKit-VirtualHIDDevice)
+- **Linux** — evdev exclusive grab + uinput ([linux.md](./linux.md))
+- **Windows** — low-level keyboard hook + SendInput ([windows.md](./windows.md))
 - **Mac F-row media** (Apple Internal by default) — brightness, volume, playback, etc.; see [F1–F12](./configuration.md#f1f12-behavior-macos)
 
 ### F1–F12 (short)
@@ -44,9 +46,11 @@ tail -20 /var/log/keys-layer.log
 | Doc | When |
 |-----|------|
 | [quickstart.md](./quickstart.md) | First-time quickstart (from source) |
-| [homebrew.md](./homebrew.md) | `brew install` |
-| [prerequisite.md](./prerequisite.md) | Driver / permissions (required forever) |
-| [installation.md](./installation.md) | Full install + troubleshooting |
+| [homebrew.md](./homebrew.md) | `brew install` (macOS) |
+| [linux.md](./linux.md) | Linux: `./scripts/install-linux.sh` |
+| [windows.md](./windows.md) | Windows: LLHOOK + SendInput |
+| [prerequisite.md](./prerequisite.md) | Driver / permissions (macOS; required forever) |
+| [installation.md](./installation.md) | Full install + troubleshooting (macOS) |
 | [configuration.md](./configuration.md) | TOML reference |
 | [uninstall.md](./uninstall.md) | Remove |
 
@@ -128,9 +132,13 @@ You do **not** need Karabiner-Elements’ own remapping (Core-Service). Use the 
 
 These are not temporary setup steps you can remove later — they are how keyboard remapping works on modern macOS without a custom Apple-signed dext.
 
+### Linux
+
+See **[linux.md](./linux.md)** — needs access to `/dev/input` (grab) and `/dev/uinput` (emit). No Karabiner equivalent.
+
 ### Other
 
-- Do **not** run Karabiner-Elements remapping at the same time — only one process can grab the keyboard.
+- Do **not** run Karabiner-Elements remapping at the same time on macOS — only one process can grab the keyboard.
 - Uses `karabiner-driverkit` **0.3.x** (compatible with Karabiner-Elements’ bundled VirtualHID daemon ~6.x). Version **0.4.x** needs standalone VirtualHIDDevice v8.0.0 and will fail with `connect_failed asio.system:2` against KE’s daemon.
 
 ## License

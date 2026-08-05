@@ -73,7 +73,7 @@ f_row_media_devices = ["Apple Internal"]  # Fn-aware F-row media (default)
 | `hold_ms` | integer (ms) | `200` | Global hold delay when a layer/key does not set its own |
 | `base_layer` | string | `"base"` | Layer active when the program starts (must exist) |
 | `devices` | string array | `[]` (all keyboards) | Product-name substrings to seize; empty = all |
-| `f_row_media_devices` | string array | `["Apple Internal"]` | Only these keyboards get Mac-style F1–F12 ↔ media (Fn/Globe + System Settings). Other boards keep real F-keys. Set `[]` to disable. |
+| `f_row_media_devices` | string array | `["Apple Internal"]` | Product-name substrings that get F1–F12 ↔ media. **macOS:** Fn/Globe + System Settings. **Linux:** media by default; hold `KEY_FN` for real F-keys when the board sends it. F3/F4 stay F-keys. Set `[]` to disable. |
 
 ### F1–F12 behavior (macOS)
 

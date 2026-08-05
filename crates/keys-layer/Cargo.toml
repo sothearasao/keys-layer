@@ -3,7 +3,7 @@ name = "keys-layer"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Simple hold-to-layer keyboard remapper (macOS DriverKit / Karabiner VirtualHID)"
+description = "Hold-to-layer keyboard remapper (macOS / Linux / Windows)"
 
 [[bin]]
 name = "keys-layer"
@@ -18,3 +18,15 @@ keys-layer-core = { workspace = true }
 # fail with connect_failed asio.system:2 against KE's daemon.
 karabiner-driverkit = "=0.3.0"
 libc = "0.2"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+evdev = "0.13"
+libc = "0.2"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { version = "0.59", features = [
+  "Win32_Foundation",
+  "Win32_UI_WindowsAndMessaging",
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_System_Console",
+] }

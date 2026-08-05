@@ -1,0 +1,2 @@
+# Allow users in group `input` to create uinput virtual devices.
+KERNEL=="uinput", MODE="0660", GROUP="input", OPTIONS+="static_node=uinput"

@@ -1,0 +1,17 @@
+[Unit]
+Description=keys-layer keyboard remapper (system)
+Documentation=https://github.com/sothearasao/keys-layer
+After=multi-user.target
+
+[Service]
+Type=simple
+# Run as the login user so the config lives under their home; still needs
+# input + uinput access (udev rule + `input` group recommended).
+User=__KEYS_LAYER_USER__
+Group=input
+ExecStart=__KEYS_LAYER_BIN__ __KEYS_LAYER_CONFIG__
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

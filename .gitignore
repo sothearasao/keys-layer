@@ -8,6 +8,9 @@ target/
 # MSVC debug info
 *.pdb
 
+# Windows installer output
+dist/
+
 # cargo mutants
 **/mutants.out*/
 

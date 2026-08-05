@@ -10,6 +10,19 @@ Related: [configuration](./configuration.md) · [linux.md](./linux.md)
 
 ## Quick install
 
+### Installer (recommended)
+
+Download the latest **Windows x64 setup** from [Releases](https://github.com/sothearasao/keys-layer/releases):
+
+- `keys-layer-<version>-windows-x64-setup.exe` — installs to `%LOCALAPPDATA%\keys-layer`, seeds config, optional logon autostart
+- `keys-layer-<version>-windows-x64.zip` — portable exe (no installer)
+
+Windows SmartScreen may warn on unsigned builds — choose **More info → Run anyway**.
+
+Uninstall via Windows **Apps & features**, or the Start Menu uninstall entry (config under `%APPDATA%\keys-layer` is kept).
+
+### From source
+
 From the repo root in PowerShell (needs [Rust](https://rustup.rs)):
 
 ```powershell
@@ -26,6 +39,18 @@ This builds a release binary into `%LOCALAPPDATA%\keys-layer\keys-layer.exe`, cr
 ```
 
 If PowerShell blocks scripts: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
+
+### Build the setup EXE locally
+
+Needs [Inno Setup 6](https://jrsoftware.org/isinfo.php) (`choco install innosetup`):
+
+```powershell
+.\scripts\build-windows-installer.ps1
+# → dist\windows\keys-layer-<ver>-windows-x64-setup.exe
+# → dist\windows\keys-layer-<ver>-windows-x64.zip
+```
+
+CI builds these on `v*` tags (see `.github/workflows/release-windows.yml`).
 
 ---
 

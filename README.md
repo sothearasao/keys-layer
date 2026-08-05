@@ -48,7 +48,7 @@ tail -20 /var/log/keys-layer.log
 | [quickstart.md](./quickstart.md) | First-time quickstart (from source) |
 | [homebrew.md](./homebrew.md) | `brew install` (macOS) |
 | [linux.md](./linux.md) | Linux: `./scripts/install-linux.sh` |
-| [windows.md](./windows.md) | Windows: `.\scripts\install-windows.ps1` |
+| [windows.md](./windows.md) | Windows: installer / `.\scripts\install-windows.ps1` |
 | [prerequisite.md](./prerequisite.md) | Driver / permissions (macOS; required forever) |
 | [installation.md](./installation.md) | Full install + troubleshooting (macOS) |
 | [configuration.md](./configuration.md) | TOML reference |

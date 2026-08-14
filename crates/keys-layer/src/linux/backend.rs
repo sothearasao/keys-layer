@@ -20,6 +20,34 @@ use super::reload;
 
 const VIRTUAL_NAME: &str = "keys-layer virtual keyboard";
 
+/// Print keyboard-like evdev names for `settings.devices` (does not grab).
+pub fn list_devices() -> Result<(), String> {
+    println!("Connected keyboards (evdev):");
+    println!();
+    println!("  Use a product-name substring in settings.devices, e.g.:");
+    println!("    devices = [\"AT Translated\"]");
+    println!();
+
+    let mut found = false;
+    for (path, device) in evdev::enumerate() {
+        let name = device.name().unwrap_or("unknown").to_string();
+        if should_skip_device(&name) || !looks_like_keyboard(&device) {
+            continue;
+        }
+        found = true;
+        println!("  • {name}  ({})", path.display());
+    }
+
+    if !found {
+        return Err(
+            "no keyboards found.\n\
+             Need read access to /dev/input/event* (add your user to group `input`, or run as root)."
+                .into(),
+        );
+    }
+    Ok(())
+}
+
 enum PhysEvent {
     Key {
         code: KeyCode,

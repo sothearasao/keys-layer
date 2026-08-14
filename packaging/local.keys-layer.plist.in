@@ -13,6 +13,9 @@
   <true/>
   <key>KeepAlive</key>
   <true/>
+  <!-- Avoid tight restart loops if VirtualHID is slow after login. -->
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
   <key>StandardOutPath</key>
   <string>/var/log/keys-layer.log</string>
   <key>StandardErrorPath</key>

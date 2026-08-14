@@ -12,3 +12,8 @@ use std::path::Path;
 pub fn run(config_path: &Path) -> Result<(), String> {
     driverkit::run(config_path)
 }
+
+/// Print connected keyboard-class HID product names (for `settings.devices`).
+pub fn list_devices() -> Result<(), String> {
+    driverkit::list_devices()
+}

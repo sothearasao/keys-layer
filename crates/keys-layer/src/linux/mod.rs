@@ -11,3 +11,8 @@ use std::path::Path;
 pub fn run(config_path: &Path) -> Result<(), String> {
     backend::run(config_path)
 }
+
+/// Print evdev keyboard product names (for `settings.devices`).
+pub fn list_devices() -> Result<(), String> {
+    backend::list_devices()
+}

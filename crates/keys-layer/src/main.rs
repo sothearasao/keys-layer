@@ -11,12 +11,53 @@ fn main() {
     keys_layer::windows::init_process_io();
 
     let mut args = env::args().skip(1);
-    let config_path = match args.next() {
+    let first = args.next();
+
+    match first.as_deref() {
+        Some("-h") | Some("--help") => {
+            print_usage();
+            process::exit(0);
+        }
+        Some("--list-devices") => {
+            #[cfg(target_os = "macos")]
+            {
+                if let Err(err) = keys_layer::macos::list_devices() {
+                    eprintln!("error: {err}");
+                    process::exit(1);
+                }
+                return;
+            }
+            #[cfg(target_os = "linux")]
+            {
+                if let Err(err) = keys_layer::linux::list_devices() {
+                    eprintln!("error: {err}");
+                    process::exit(1);
+                }
+                return;
+            }
+            #[cfg(target_os = "windows")]
+            {
+                eprintln!(
+                    "settings.devices is ignored on Windows (system-wide LLHOOK).\n\
+                     No per-device list is available."
+                );
+                process::exit(0);
+            }
+            #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+            {
+                eprintln!("unsupported platform");
+                process::exit(1);
+            }
+        }
+        _ => {}
+    }
+
+    let config_path = match first {
         Some(p) => PathBuf::from(p),
         None => default_config_path().unwrap_or_else(|| {
+            print_usage();
             eprintln!(
-                "usage: keys-layer [config.toml]\n\n\
-                 No config given and no default found.\n\
+                "\nNo config given and no default found.\n\
                  Put a config at:\n\
                    macOS/Linux: ~/.config/keys-layer/config.toml\n\
                    Windows:     %APPDATA%\\keys-layer\\config.toml\n\
@@ -61,6 +102,17 @@ fn main() {
         eprintln!("keys-layer currently supports macOS, Linux, and Windows.");
         process::exit(1);
     }
+}
+
+fn print_usage() {
+    eprintln!(
+        "usage: keys-layer [config.toml]\n\
+         \n\
+         options:\n\
+           --list-devices   print connected keyboard names for settings.devices\n\
+                            (macOS: sudo; Linux: input group or root)\n\
+           -h, --help       show this help"
+    );
 }
 
 fn default_config_path() -> Option<PathBuf> {

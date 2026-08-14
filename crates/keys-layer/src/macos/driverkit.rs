@@ -29,8 +29,74 @@ const VALUE_RELEASE: u64 = 0;
 const VALUE_PRESS: u64 = 1;
 const VALUE_REPEAT: u64 = 2;
 
+/// HID Generic Desktop — mouse axes live here on composite BT devices.
+const PAGE_GENERIC_DESKTOP: u32 = 0x01;
+
 /// Set by the hotplug thread before `release_input_only`; main loop regrabs instead of exiting.
 static HOTPLUG_RESEIZE: AtomicBool = AtomicBool::new(false);
+/// Set when VirtualHID `send_key` reports sink-not-ready; main loop releases grab.
+static SINK_LOST: AtomicBool = AtomicBool::new(false);
+
+/// Print HID product names useful for `settings.devices` (does not seize anything).
+pub fn list_devices() -> Result<(), String> {
+    ensure_root()?;
+
+    if !driver_activated() {
+        return Err(
+            "Karabiner-DriverKit-VirtualHIDDevice is not activated.\n\
+             See prerequisite.md / installation.md."
+                .into(),
+        );
+    }
+
+    let all = fetch_devices();
+    if all.is_empty() {
+        return Err(
+            "no HID devices reported (is the VirtualHIDDevice daemon running?)".into(),
+        );
+    }
+
+    println!("Connected HID devices (DriverKit):");
+    println!();
+    println!("  Use a product-name substring in settings.devices, e.g.:");
+    println!("    devices = [\"Apple Internal\"]");
+    println!();
+
+    let mut keyboards = Vec::new();
+    let mut skipped = Vec::new();
+    for d in &all {
+        if is_virtual_hid_name(&d.product_key) {
+            continue;
+        }
+        if looks_like_pointer_peripheral(&d.product_key) {
+            skipped.push(d.product_key.as_str());
+        } else {
+            keyboards.push(d.product_key.as_str());
+        }
+    }
+
+    if keyboards.is_empty() {
+        println!("Keyboards (would seize if devices = []):");
+        println!("  (none)");
+    } else {
+        println!("Keyboards (candidates for settings.devices):");
+        for name in &keyboards {
+            println!("  • {name}");
+        }
+    }
+
+    if !skipped.is_empty() {
+        println!();
+        println!("Skipped as likely mouse/pointer (not seized):");
+        for name in &skipped {
+            println!("  • {name}");
+        }
+    }
+
+    println!();
+    println!("Also logged when the daemon runs: /var/log/keys-layer.log");
+    Ok(())
+}
 
 /// Run the DriverKit remapper until the process exits (or grab fails).
 pub fn run(config_path: &Path) -> Result<(), String> {
@@ -69,6 +135,16 @@ pub fn run(config_path: &Path) -> Result<(), String> {
         caps_lock::force_caps_lock_off();
     }
 
+    if device_patterns.is_empty() {
+        eprintln!(
+            "warning: settings.devices is empty — seizing all keyboard-class HID devices.\n\
+             Bluetooth mice (Logitech MX / M720, etc.) often expose a Keyboard interface;\n\
+             seizing them freezes the cursor. Prefer an allowlist, e.g.\n\
+               devices = [\"Apple Internal\"]\n\
+             or devices = [\"Moonlander\"]"
+        );
+    }
+
     let (seized, initial_hashes) = seize_devices(&device_patterns)?;
     eprintln!("seized keyboards: {}", seized.join(", "));
     let seized_hashes = Arc::new(Mutex::new(initial_hashes));
@@ -89,9 +165,13 @@ pub fn run(config_path: &Path) -> Result<(), String> {
     }
     let _guard = Guard;
 
-    if !wait_for_sink(Duration::from_secs(10)) {
+    // Physical keyboards are already seized here. If the virtual sink never
+    // comes up, release immediately so the Mac is not left without a keyboard.
+    if !wait_for_sink(Duration::from_secs(15)) {
+        release_input_only();
         return Err(
             "DriverKit virtual keyboard not ready (sink disconnected).\n\
+             Released physical keyboards so OS input works.\n\
              Start Karabiner-VirtualHIDDevice-Daemon and retry."
                 .into(),
         );
@@ -144,6 +224,16 @@ pub fn run(config_path: &Path) -> Result<(), String> {
         let got = wait_key(&mut event);
         if got == 0 {
             if HOTPLUG_RESEIZE.swap(false, Ordering::SeqCst) {
+                if !is_sink_ready() {
+                    eprintln!(
+                        "hotplug: sink not ready — leaving keyboards released \
+                         until VirtualHID recovers"
+                    );
+                    return Err(
+                        "virtual keyboard sink not ready after hotplug release"
+                            .into(),
+                    );
+                }
                 if regrab_input() {
                     eprintln!("hotplug: reseized keyboards");
                     continue;
@@ -155,6 +245,21 @@ pub fn run(config_path: &Path) -> Result<(), String> {
                 );
             }
             return Err("input pipe closed (devices released)".into());
+        }
+
+        if SINK_LOST.swap(false, Ordering::SeqCst) || !is_sink_ready() {
+            eprintln!(
+                "virtual keyboard sink lost — releasing physical keyboards \
+                 so the Mac stays usable (daemon will retry)"
+            );
+            release_input_only();
+            return Err("virtual keyboard sink lost".into());
+        }
+
+        // Never feed mouse axes into VirtualHID keyboard (drops motion while
+        // the device stays seized — skipping here avoids log spam / bad emits).
+        if is_pointer_motion(event.page, event.code) {
+            continue;
         }
 
         // Track Fn / Globe before forwarding non-keyboard pages.
@@ -262,10 +367,53 @@ fn is_virtual_hid_name(name: &str) -> bool {
     lower.contains("karabiner") || lower.contains("virtualhid")
 }
 
+/// BT mice often advertise a Keyboard usage page; seizing them steals X/Y reports
+/// and freezes the cursor (Kanata #1636). Keep real keyboards (incl. Apple
+/// "Keyboard / Trackpad"); skip pointer-first peripherals.
+fn looks_like_pointer_peripheral(name: &str) -> bool {
+    let n = name.to_ascii_lowercase();
+    if n.contains("keyboard") {
+        return false;
+    }
+    if n.contains("mouse") || n.contains("trackball") {
+        return true;
+    }
+    if n.contains("trackpad") {
+        return true;
+    }
+    const KNOWN: &[&str] = &[
+        "mx master",
+        "mx anywhere",
+        "m720",
+        "m585",
+        "m590",
+        "m510",
+        "m705",
+        "m215",
+        "m185",
+        "g pro x superlight",
+        "g502",
+        "g304",
+        "g305",
+        "magic mouse",
+        "magic trackpad",
+        "surface mouse",
+        "thinkpad bluetooth laser",
+    ];
+    KNOWN.iter().any(|p| n.contains(p))
+}
+
+fn is_pointer_motion(page: u32, code: u32) -> bool {
+    // Generic Desktop: X, Y, Z, Wheel, Motion Wakeup, …
+    page == PAGE_GENERIC_DESKTOP
+        && matches!(code, 0x30 | 0x31 | 0x32 | 0x33 | 0x34 | 0x35 | 0x36 | 0x37 | 0x38 | 0x48)
+}
+
 fn matching_devices(patterns: &[String]) -> Vec<karabiner_driverkit::DeviceData> {
     let available = fetch_devices()
         .into_iter()
         .filter(|d| !is_virtual_hid_name(&d.product_key))
+        .filter(|d| !looks_like_pointer_peripheral(&d.product_key))
         .collect::<Vec<_>>();
     if patterns.is_empty() {
         return available;
@@ -281,10 +429,21 @@ fn matching_devices(patterns: &[String]) -> Vec<karabiner_driverkit::DeviceData>
         .collect()
 }
 
-/// Register keyboards to seize.
-/// Empty `patterns` → all keyboards. Otherwise match product-name substrings.
+/// Register keyboards to seize (always by hash/name — never `register_device("")`,
+/// which would grab newly appeared mouse keyboard interfaces too).
+/// Empty `patterns` → all non-pointer keyboard-class devices.
 /// Returns (human-readable names, device hashes registered).
 fn seize_devices(patterns: &[String]) -> Result<(Vec<String>, HashSet<u64>), String> {
+    // One-shot log of pointer peripherals we refuse to seize.
+    for d in fetch_devices() {
+        if !is_virtual_hid_name(&d.product_key) && looks_like_pointer_peripheral(&d.product_key) {
+            eprintln!(
+                "skipping likely mouse/pointer (will not seize): {}",
+                d.product_key
+            );
+        }
+    }
+
     let matched = matching_devices(patterns);
     if matched.is_empty() {
         let available = fetch_devices()
@@ -305,24 +464,11 @@ fn seize_devices(patterns: &[String]) -> Result<(Vec<String>, HashSet<u64>), Str
                 names.join(", ")
             ));
         }
-    }
-
-    if patterns.is_empty() {
-        if !register_device("") {
-            return Err(
-                "failed to register keyboards with Karabiner DriverKit \
-                 (is the VirtualHIDDevice daemon running?)"
-                    .into(),
-            );
-        }
-        let hashes: HashSet<u64> = matched.iter().map(|d| d.hash).collect();
-        let names: Vec<String> = matched.iter().map(|d| d.product_key.clone()).collect();
-        let label = if names.is_empty() {
-            vec!["(all keyboards)".into()]
-        } else {
-            names
-        };
-        return Ok((label, hashes));
+        return Err(
+            "no keyboards left to seize after skipping mouse/pointer devices.\n\
+             Set settings.devices to your keyboard name explicitly."
+                .into(),
+        );
     }
 
     let mut seized_names = Vec::new();
@@ -339,9 +485,13 @@ fn seize_devices(patterns: &[String]) -> Result<(Vec<String>, HashSet<u64>), Str
     }
 
     if seized_names.is_empty() {
-        return Err(format!(
-            "failed to register devices matching {patterns:?}"
-        ));
+        return Err(if patterns.is_empty() {
+            "failed to register any keyboards with Karabiner DriverKit \
+             (is the VirtualHIDDevice daemon running?)"
+                .into()
+        } else {
+            format!("failed to register devices matching {patterns:?}")
+        });
     }
 
     Ok((seized_names, hashes))
@@ -387,25 +537,17 @@ fn start_hotplug_watcher(
             let mut known = seized_hashes.lock().expect("seized lock");
             let mut new_names = Vec::new();
 
-            if patterns.is_empty() {
-                if !register_device("") {
-                    eprintln!("hotplug: register_device(all) failed");
-                    continue;
-                }
-                for (hash, name) in &newcomers {
+            // Always register newcomers by hash — never register_device("")
+            // (that would seize BT mice that just appeared as keyboard-class).
+            for (hash, name) in &newcomers {
+                let hash_id = format!("0x{:X}", hash);
+                let ok = register_device(&hash_id) || register_device(name);
+                if ok {
                     known.insert(*hash);
                     known_names.insert(name.clone());
                     new_names.push(name.clone());
-                }
-            } else {
-                for (hash, name) in &newcomers {
-                    let hash_id = format!("0x{:X}", hash);
-                    let ok = register_device(&hash_id) || register_device(name);
-                    if ok {
-                        known.insert(*hash);
-                        known_names.insert(name.clone());
-                        new_names.push(name.clone());
-                    }
+                } else {
+                    eprintln!("hotplug: failed to register {name}");
                 }
             }
             drop(known);
@@ -454,6 +596,7 @@ fn emit_hid(page: u32, code: u32, value: u64) {
     let rc = send_key(&mut event);
     if rc == 2 {
         eprintln!("warning: virtual keyboard sink not ready (event dropped)");
+        SINK_LOST.store(true, Ordering::SeqCst);
     } else if rc == 1 {
         eprintln!("warning: unrecognized HID page={page:#x} code={code:#x}");
     }
@@ -489,6 +632,7 @@ pub(super) fn emit_outputs(outputs: &[OutputEvent]) {
         let rc = send_key(&mut event);
         if rc == 2 {
             eprintln!("warning: virtual keyboard sink not ready");
+            SINK_LOST.store(true, Ordering::SeqCst);
         } else if rc == 1 {
             eprintln!("warning: unrecognized HID usage for {name}");
         }

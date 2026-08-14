@@ -72,8 +72,50 @@ f_row_media_devices = ["Apple Internal"]  # Fn-aware F-row media (default)
 |-----|------|---------|-------------|
 | `hold_ms` | integer (ms) | `200` | Global hold delay when a layer/key does not set its own |
 | `base_layer` | string | `"base"` | Layer active when the program starts (must exist) |
-| `devices` | string array | `[]` (all keyboards) | Product-name substrings to seize; empty = all |
+| `devices` | string array | `[]` (all keyboards) | Product-name substrings to seize. **macOS: strongly prefer an allowlist** (e.g. `["Apple Internal"]`) — empty seizes every keyboard-class HID device; many Bluetooth mice expose one and seizing them freezes the cursor. Pointer-like names are skipped automatically, but an allowlist is safer. See [Listing devices](#listing-devices). |
 | `f_row_media_devices` | string array | `["Apple Internal"]` | Product-name substrings that get F1–F12 ↔ media. **macOS:** Fn/Globe + System Settings. **Linux:** media by default; hold `KEY_FN` for real F-keys when the board sends it. F3/F4 stay F-keys. Set `[]` to disable. |
+
+### Listing devices
+
+Use a **substring** of the product name in `settings.devices` (match is case-insensitive).
+
+**Recommended — ask keys-layer:**
+
+```bash
+# macOS (needs sudo + VirtualHID daemon)
+sudo keys-layer --list-devices
+
+# Linux (read access to /dev/input/event*, or root)
+keys-layer --list-devices
+```
+
+Example output:
+
+```text
+Keyboards (candidates for settings.devices):
+  • Apple Internal Keyboard / Trackpad
+  • Moonlander Mark I
+
+Skipped as likely mouse/pointer (not seized):
+  • MX Master 3
+```
+
+Then in `~/.config/keys-layer/config.toml`:
+
+```toml
+[settings]
+devices = ["Apple Internal"]          # built-in Mac keyboard only
+# devices = ["Apple Internal", "Moonlander"]
+```
+
+**Also useful:**
+
+| Source | What to look for |
+|--------|------------------|
+| Daemon log | `seized keyboards: …` and `skipping likely mouse/pointer: …` in `/var/log/keys-layer.log` (macOS) |
+| Mismatch error | If `devices` matches nothing, the error lists `Connected: …` |
+
+Windows ignores `settings.devices` (system-wide hook); `--list-devices` explains that.
 
 ### F1–F12 behavior (macOS)
 

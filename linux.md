@@ -64,9 +64,15 @@ cp -n config.example.toml ~/.config/keys-layer/config.toml
 
 ```toml
 [settings]
-devices = []                          # all keyboards
+devices = []                          # all keyboards — or allowlist from: keys-layer --list-devices
 f_row_media_devices = ["AT Translated"]  # example laptop controller name
 # f_row_media_devices = []            # raw F-keys everywhere
+```
+
+List names:
+
+```bash
+keys-layer --list-devices
 ```
 
 ---

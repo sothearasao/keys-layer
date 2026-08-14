@@ -20,6 +20,13 @@ class KeysLayer < Formula
   depends_on "rust" => :build
 
   def install
+    # Homebrew's rust bottle ships `rust-objcopy` as a symlink to `llvm-objcopy`.
+    # On current llvm bottles that tool is often missing / the symlink breaks after
+    # relocation, and `cargo install --release` then fails with:
+    #   unable to run `rust-objcopy`: No such file or directory
+    # Disable release stripping so the build does not need rust-objcopy.
+    ENV["CARGO_PROFILE_RELEASE_STRIP"] = "none"
+
     system "cargo", "install", *std_cargo_args(path: "crates/keys-layer")
 
     (pkgshare/"examples").install "config.example.toml"

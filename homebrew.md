@@ -17,7 +17,7 @@ brew install sothearasao/keys-layer/keys-layer
 keys-layer-setup
 ```
 
-Stable installs **v0.1.2** from the GitHub tag. For the latest `main` branch instead:
+Stable installs **v0.1.3** from the GitHub tag. For the latest `main` branch instead:
 
 ```bash
 brew install --HEAD sothearasao/keys-layer/keys-layer
@@ -76,6 +76,16 @@ keys-layer-setup                       # refresh LaunchDaemon paths if needed
 ```
 
 Re-check Input Monitoring if the log shows `not permitted` after an upgrade.
+
+---
+
+## Troubleshooting
+
+| Symptom | Fix |
+|---------|-----|
+| `unable to run rust-objcopy` during `brew install` | Fixed in the formula (`CARGO_PROFILE_RELEASE_STRIP=none`). Update the tap / reinstall `--HEAD`. Or: `export CARGO_PROFILE_RELEASE_STRIP=none` and use `./scripts/install.sh`. |
+| `keys-layer-setup: command not found` | Install failed — fix the build first, then `brew install …` again |
+| Cursor stuck / keyboard dies with BT mouse | Set `devices = ["Apple Internal"]` (see [configuration.md](./configuration.md#listing-devices)); upgrade past the seize filter fix |
 
 ---
 

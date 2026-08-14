@@ -72,9 +72,11 @@ if ! command -v cargo >/dev/null 2>&1; then
 fi
 
 echo "==> building release binary"
+# Homebrew rust may ship a broken rust-objcopy; disable strip so release builds work.
+export CARGO_PROFILE_RELEASE_STRIP=none
 # Build as the login user so cargo cache stays in their home.
 if [[ "$(id -un)" == "root" ]]; then
-  sudo -u "${REAL_USER}" -H bash -lc "cd $(printf %q "$ROOT") && cargo build --release -p keys-layer"
+  sudo -u "${REAL_USER}" -H bash -lc "cd $(printf %q "$ROOT") && export CARGO_PROFILE_RELEASE_STRIP=none && cargo build --release -p keys-layer"
 else
   cargo build --release -p keys-layer
 fi

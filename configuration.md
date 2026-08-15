@@ -64,7 +64,7 @@ Hold a key past `hold_ms` → enter another layer (momentary). Release → retur
 [settings]
 hold_ms = 200
 base_layer = "base"
-# devices = ["Moonlander"]           # optional: seize only this board
+devices = ["Apple Internal"]         # allowlist (see Listing devices); add more boards as needed
 f_row_media_devices = ["Apple Internal"]  # Fn-aware F-row media (default)
 ```
 

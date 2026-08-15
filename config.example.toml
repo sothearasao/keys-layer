@@ -1,12 +1,12 @@
 [settings]
 # Global fallback when a layer/key does not set hold_ms.
 hold_ms = 200
-# Strongly recommended on macOS: only seize these keyboards (product-name substring).
-# Empty / omitted = all keyboard-class HID devices. Bluetooth mice often expose a
-# Keyboard interface — seizing them freezes the cursor (stuck to screen corners).
-# List names with:  sudo keys-layer --list-devices
-# devices = ["Apple Internal"]
-# devices = ["Moonlander"]
+# macOS: allowlist keyboards only (product-name substring). Empty = all keyboard-class
+# HID devices — Bluetooth mice often expose a Keyboard interface and seizing them
+# freezes the cursor. List names: sudo keys-layer --list-devices
+# Linux: same filter; Windows ignores this (system-wide hook).
+devices = ["Apple Internal"]
+# devices = ["Apple Internal", "Moonlander"]
 # Mac-style F1–F12 ↔ media (macOS only; ignored on Linux).
 # Only these product-name substrings get it — other boards keep real F-keys.
 # F3/F4 stay as F-keys (no Mission Control / Spotlight via VirtualHID).

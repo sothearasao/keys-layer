@@ -34,8 +34,10 @@ const PAGE_GENERIC_DESKTOP: u32 = 0x01;
 
 /// Set by the hotplug thread before `release_input_only`; main loop regrabs instead of exiting.
 static HOTPLUG_RESEIZE: AtomicBool = AtomicBool::new(false);
-/// Set when VirtualHID `send_key` reports sink-not-ready; main loop releases grab.
-static SINK_LOST: AtomicBool = AtomicBool::new(false);
+/// Set when VirtualHID sink dies (sleep/wake or send_key rc=2); main loop recovers.
+static SINK_RECOVER: AtomicBool = AtomicBool::new(false);
+/// Whether physical keyboards are currently seized (watchdog must not double-release).
+static INPUT_SEIZED: AtomicBool = AtomicBool::new(false);
 
 /// Print HID product names useful for `settings.devices` (does not seize anything).
 pub fn list_devices() -> Result<(), String> {
@@ -176,6 +178,7 @@ pub fn run(config_path: &Path) -> Result<(), String> {
                 .into(),
         );
     }
+    INPUT_SEIZED.store(true, Ordering::SeqCst);
 
     let engine_tick = Arc::clone(&engine);
     let started_tick = started;
@@ -189,6 +192,7 @@ pub fn run(config_path: &Path) -> Result<(), String> {
         emit_outputs(&outputs);
     });
 
+    start_sink_watchdog();
     start_hotplug_watcher(
         Arc::clone(&devices),
         Arc::clone(&f_row_media_devices),
@@ -210,6 +214,7 @@ pub fn run(config_path: &Path) -> Result<(), String> {
         "keys-layer (DriverKit) running — {}\n\
          Hold F / Caps for layers. Requires sudo + Karabiner VirtualHIDDevice.\n\
          Config hot-reloads on save (or SIGHUP). New keyboards are seized automatically.\n\
+         After sleep, VirtualHID is released/reseized automatically if the sink drops.\n\
          Ctrl-C to quit.",
         config_path.display()
     );
@@ -223,37 +228,30 @@ pub fn run(config_path: &Path) -> Result<(), String> {
         };
         let got = wait_key(&mut event);
         if got == 0 {
-            if HOTPLUG_RESEIZE.swap(false, Ordering::SeqCst) {
-                if !is_sink_ready() {
-                    eprintln!(
-                        "hotplug: sink not ready — leaving keyboards released \
-                         until VirtualHID recovers"
-                    );
-                    return Err(
-                        "virtual keyboard sink not ready after hotplug release"
-                            .into(),
-                    );
+            let hotplug = HOTPLUG_RESEIZE.swap(false, Ordering::SeqCst);
+            let sink = SINK_RECOVER.swap(false, Ordering::SeqCst);
+            if hotplug || sink {
+                INPUT_SEIZED.store(false, Ordering::SeqCst);
+                let ctx = match (hotplug, sink) {
+                    (true, true) => "hotplug+sink-loss",
+                    (true, false) => "hotplug",
+                    _ => "sink-loss",
+                };
+                if let Err(err) = recover_input_after_release(ctx) {
+                    return Err(err);
                 }
-                if regrab_input() {
-                    eprintln!("hotplug: reseized keyboards");
-                    continue;
-                }
-                return Err(
-                    "hotplug regrab failed — restart keys-layer \
-                     (sudo launchctl kickstart -k system/local.keys-layer)"
-                        .into(),
-                );
+                continue;
             }
             return Err("input pipe closed (devices released)".into());
         }
 
-        if SINK_LOST.swap(false, Ordering::SeqCst) || !is_sink_ready() {
-            eprintln!(
+        if SINK_RECOVER.load(Ordering::SeqCst) || !is_sink_ready() {
+            release_for_recovery(
                 "virtual keyboard sink lost — releasing physical keyboards \
-                 so the Mac stays usable (daemon will retry)"
+                 so the Mac stays usable (will reseize when VirtualHID returns)",
             );
-            release_input_only();
-            return Err("virtual keyboard sink lost".into());
+            // release_input_only closes the pipe; next wait_key returns 0.
+            continue;
         }
 
         // Never feed mouse axes into VirtualHID keyboard (drops motion while
@@ -348,6 +346,52 @@ fn wait_for_sink(timeout: Duration) -> bool {
         thread::sleep(Duration::from_millis(100));
     }
     is_sink_ready()
+}
+
+/// Release seized keyboards once and ask the main loop to wait for VirtualHID.
+fn release_for_recovery(reason: &str) {
+    SINK_RECOVER.store(true, Ordering::SeqCst);
+    if INPUT_SEIZED.swap(false, Ordering::SeqCst) {
+        eprintln!("{reason}");
+        release_input_only();
+    }
+}
+
+/// After `release_input_only`, wait for the sink and reseize registered devices.
+fn recover_input_after_release(context: &str) -> Result<(), String> {
+    eprintln!("{context}: waiting for VirtualHID sink (common after sleep/wake)…");
+    if !wait_for_sink(Duration::from_secs(120)) {
+        return Err(format!(
+            "{context}: virtual keyboard sink did not recover within 120s.\n\
+             Released keyboards so OS input works; LaunchDaemon will retry."
+        ));
+    }
+    // Brief settle — dext / daemon often need a moment after lid open.
+    thread::sleep(Duration::from_millis(750));
+    if !regrab_input() {
+        return Err(format!(
+            "{context}: regrab failed after sink recovery — restart keys-layer \
+             (sudo launchctl kickstart -k system/local.keys-layer)"
+        ));
+    }
+    INPUT_SEIZED.store(true, Ordering::SeqCst);
+    eprintln!("{context}: reseized keyboards — remapping active again");
+    Ok(())
+}
+
+/// Poll VirtualHID health. After sleep the sink often dies while keyboards stay
+/// seized (dead input until process kill). Release immediately so macOS works,
+/// then let the main loop reseize when the sink returns.
+fn start_sink_watchdog() {
+    thread::spawn(|| loop {
+        thread::sleep(Duration::from_secs(1));
+        if INPUT_SEIZED.load(Ordering::SeqCst) && !is_sink_ready() {
+            release_for_recovery(
+                "sink watchdog: VirtualHID disconnected (often after sleep) — \
+                 releasing keyboards; will reseize when the sink returns",
+            );
+        }
+    });
 }
 
 /// Hashes of connected keyboards whose product name matches any pattern.
@@ -568,7 +612,9 @@ fn start_hotplug_watcher(
                 device_hashes_matching(&media_patterns);
 
             HOTPLUG_RESEIZE.store(true, Ordering::SeqCst);
-            release_input_only();
+            if INPUT_SEIZED.swap(false, Ordering::SeqCst) {
+                release_input_only();
+            }
             // Cooldown so a flaky regrab cannot spin.
             thread::sleep(Duration::from_secs(3));
         }
@@ -596,7 +642,9 @@ fn emit_hid(page: u32, code: u32, value: u64) {
     let rc = send_key(&mut event);
     if rc == 2 {
         eprintln!("warning: virtual keyboard sink not ready (event dropped)");
-        SINK_LOST.store(true, Ordering::SeqCst);
+        release_for_recovery(
+            "send_key: VirtualHID sink not ready — releasing keyboards for recovery",
+        );
     } else if rc == 1 {
         eprintln!("warning: unrecognized HID page={page:#x} code={code:#x}");
     }
@@ -632,7 +680,9 @@ pub(super) fn emit_outputs(outputs: &[OutputEvent]) {
         let rc = send_key(&mut event);
         if rc == 2 {
             eprintln!("warning: virtual keyboard sink not ready");
-            SINK_LOST.store(true, Ordering::SeqCst);
+            release_for_recovery(
+                "send_key: VirtualHID sink not ready — releasing keyboards for recovery",
+            );
         } else if rc == 1 {
             eprintln!("warning: unrecognized HID usage for {name}");
         }

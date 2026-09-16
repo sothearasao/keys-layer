@@ -102,6 +102,7 @@ sudo launchctl kickstart -k system/local.keys-layer
 | `IOHIDDeviceOpen … not permitted` | Re-add **`/usr/local/bin/keys-layer`** to Input Monitoring (+ Accessibility); quit KE remapping ([prerequisite](./prerequisite.md)) |
 | `exclusive access` / device already open | Quit Karabiner-Elements Core-Service ([prerequisite](./prerequisite.md#3-quit-karabiner-elements-remapping)) |
 | `connect_failed asio.system:2` | Run as root / start VirtualHID daemon / check driverkit version |
+| Keyboard dead after sleep/wake | Fixed in current builds (sink watchdog releases + reseizes). Log should show `sink watchdog` / `reseized keyboards`. If stuck on an older build: `sudo launchctl kickstart -k system/local.keys-layer` |
 
 ### `connect_failed asio.system:2`
 

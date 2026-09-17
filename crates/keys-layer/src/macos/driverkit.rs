@@ -9,10 +9,10 @@
 
 use std::collections::HashSet;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use karabiner_driverkit::{
     driver_activated, fetch_devices, grab, is_sink_ready, register_device, regrab_input,
@@ -38,6 +38,8 @@ static HOTPLUG_RESEIZE: AtomicBool = AtomicBool::new(false);
 static SINK_RECOVER: AtomicBool = AtomicBool::new(false);
 /// Whether physical keyboards are currently seized (watchdog must not double-release).
 static INPUT_SEIZED: AtomicBool = AtomicBool::new(false);
+/// Recoveries in the current window (circuit breaker).
+static RECOVER_STREAK: AtomicU32 = AtomicU32::new(0);
 
 /// Print HID product names useful for `settings.devices` (does not seize anything).
 pub fn list_devices() -> Result<(), String> {
@@ -358,7 +360,23 @@ fn release_for_recovery(reason: &str) {
 }
 
 /// After `release_input_only`, wait for the sink and reseize registered devices.
+///
+/// Safety: if VirtualHID flaps (common after sleep), we **stay released** for a
+/// cooldown instead of reseizing into a half-dead sink (that bricks the keyboard
+/// until the process is killed).
 fn recover_input_after_release(context: &str) -> Result<(), String> {
+    let streak = RECOVER_STREAK.fetch_add(1, Ordering::SeqCst) + 1;
+    if streak > 3 {
+        let cooldown = Duration::from_secs(5 * 60);
+        eprintln!(
+            "{context}: {streak} recoveries in a row — keeping keyboards RELEASED \
+             for {}s so the Mac stays usable. Remaps pause; will retry after cooldown.",
+            cooldown.as_secs()
+        );
+        thread::sleep(cooldown);
+        RECOVER_STREAK.store(0, Ordering::SeqCst);
+    }
+
     eprintln!("{context}: waiting for VirtualHID sink (common after sleep/wake)…");
     if !wait_for_sink(Duration::from_secs(120)) {
         return Err(format!(
@@ -366,30 +384,66 @@ fn recover_input_after_release(context: &str) -> Result<(), String> {
              Released keyboards so OS input works; LaunchDaemon will retry."
         ));
     }
-    // Brief settle — dext / daemon often need a moment after lid open.
-    thread::sleep(Duration::from_millis(750));
+    // Settle after lid open / dext restart.
+    thread::sleep(Duration::from_secs(2));
+    if !is_sink_ready() {
+        eprintln!("{context}: sink not stable after settle — staying released");
+        return Err(format!(
+            "{context}: sink unstable after wake; left keyboards released"
+        ));
+    }
     if !regrab_input() {
         return Err(format!(
             "{context}: regrab failed after sink recovery — restart keys-layer \
              (sudo launchctl kickstart -k system/local.keys-layer)"
         ));
     }
+    // Verify sink still up right after grab; if not, release again immediately.
+    thread::sleep(Duration::from_millis(500));
+    if !is_sink_ready() {
+        eprintln!("{context}: sink dropped right after regrab — releasing again");
+        release_input_only();
+        INPUT_SEIZED.store(false, Ordering::SeqCst);
+        SINK_RECOVER.store(true, Ordering::SeqCst);
+        return Err(format!(
+            "{context}: sink died immediately after regrab; left keyboards released"
+        ));
+    }
     INPUT_SEIZED.store(true, Ordering::SeqCst);
+    RECOVER_STREAK.store(0, Ordering::SeqCst);
     eprintln!("{context}: reseized keyboards — remapping active again");
     Ok(())
 }
 
-/// Poll VirtualHID health. After sleep the sink often dies while keyboards stay
-/// seized (dead input until process kill). Release immediately so macOS works,
-/// then let the main loop reseize when the sink returns.
+/// Poll VirtualHID + wall-clock jumps (sleep/wake). Prefer releasing early over
+/// leaving the user with a dead keyboard.
 fn start_sink_watchdog() {
-    thread::spawn(|| loop {
-        thread::sleep(Duration::from_secs(1));
-        if INPUT_SEIZED.load(Ordering::SeqCst) && !is_sink_ready() {
-            release_for_recovery(
-                "sink watchdog: VirtualHID disconnected (often after sleep) — \
-                 releasing keyboards; will reseize when the sink returns",
-            );
+    thread::spawn(|| {
+        let mut last_wall = SystemTime::now();
+        loop {
+            thread::sleep(Duration::from_secs(1));
+            let now_wall = SystemTime::now();
+            let wall_gap = now_wall
+                .duration_since(last_wall)
+                .unwrap_or_default();
+            last_wall = now_wall;
+
+            // Sleep pauses this thread; on wake wall clock jumped by >> 1s.
+            if wall_gap > Duration::from_secs(3) && INPUT_SEIZED.load(Ordering::SeqCst) {
+                release_for_recovery(&format!(
+                    "sink watchdog: wall-clock jump {}s (sleep/wake) — releasing \
+                     keyboards; will reseize when VirtualHID is stable",
+                    wall_gap.as_secs()
+                ));
+                continue;
+            }
+
+            if INPUT_SEIZED.load(Ordering::SeqCst) && !is_sink_ready() {
+                release_for_recovery(
+                    "sink watchdog: VirtualHID disconnected — releasing keyboards; \
+                     will reseize when the sink returns",
+                );
+            }
         }
     });
 }

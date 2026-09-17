@@ -32,6 +32,7 @@ class KeysLayer < Formula
     (pkgshare/"examples").install "config.example.toml"
     pkgshare.install "packaging/local.keys-layer.plist.in"
     pkgshare.install "scripts/keys-layer-setup"
+    pkgshare.install "scripts/keys-layer-emergency-stop.sh"
 
     # Wrapper so `keys-layer-setup` finds share files next to itself via env.
     (bin/"keys-layer-setup").write <<~SH
@@ -44,6 +45,14 @@ class KeysLayer < Formula
     SH
     chmod 0755, bin/"keys-layer-setup"
     chmod 0755, pkgshare/"keys-layer-setup"
+
+    (bin/"keys-layer-emergency-stop").write <<~SH
+      #!/bin/bash
+      set -euo pipefail
+      exec "#{pkgshare}/keys-layer-emergency-stop.sh" "$@"
+    SH
+    chmod 0755, bin/"keys-layer-emergency-stop"
+    chmod 0755, pkgshare/"keys-layer-emergency-stop.sh"
   end
 
   def caveats
@@ -61,6 +70,9 @@ class KeysLayer < Formula
       and restart (TCC applies only to a new process):
         sudo launchctl kickstart -k system/local.keys-layer
 
+      If the keyboard ever dies (mouse still works):
+        keys-layer-emergency-stop
+
       Or run in the foreground:
         sudo #{opt_bin}/keys-layer
 
@@ -71,5 +83,6 @@ class KeysLayer < Formula
   test do
     assert_path_exists bin/"keys-layer"
     assert_predicate bin/"keys-layer-setup", :executable?
+    assert_predicate bin/"keys-layer-emergency-stop", :executable?
   end
 end

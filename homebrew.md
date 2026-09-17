@@ -86,6 +86,22 @@ Re-check Input Monitoring if the log shows `not permitted` after an upgrade.
 | `unable to run rust-objcopy` during `brew install` | Fixed in the formula (`CARGO_PROFILE_RELEASE_STRIP=none`). Update the tap / reinstall `--HEAD`. Or: `export CARGO_PROFILE_RELEASE_STRIP=none` and use `./scripts/install.sh`. |
 | `keys-layer-setup: command not found` | Install failed — fix the build first, then `brew install …` again |
 | Cursor stuck / keyboard dies with BT mouse | Set `devices = ["Apple Internal"]` (see [configuration.md](./configuration.md#listing-devices)); upgrade past the seize filter fix |
+| Keyboard dead after sleep / remapper wedged | **Emergency (mouse OK):** `keys-layer-emergency-stop` or `sudo launchctl bootout system/local.keys-layer && sudo pkill -9 keys-layer`. Then upgrade `--HEAD` and `keys-layer-setup` when you want remaps back. |
+
+### Keyboard dead right now
+
+```bash
+# mouse still works — open Terminal and run:
+sudo launchctl bootout system/local.keys-layer
+sudo pkill -9 keys-layer
+```
+
+That **stops remaps** and returns the keyboard to macOS. Leave it off until you upgrade. To start again later:
+
+```bash
+sudo launchctl bootstrap system /Library/LaunchDaemons/local.keys-layer.plist
+sudo launchctl kickstart -k system/local.keys-layer
+```
 
 ---
 

@@ -13,9 +13,9 @@ class KeysLayer < Formula
   homepage "https://github.com/sothearasao/keys-layer"
   # install() copies scripts/keys-layer-emergency-stop.sh from this archive.
   # Keep url on a snapshot that actually contains that file (v0.1.3 / v0.1.4 do not).
-  url "https://github.com/sothearasao/keys-layer/archive/6a2010640f5e6e5f4e28a7b2391563595ebd42aa.tar.gz"
-  sha256 "06a2f183ba8895a91d336be08f611e0b36ff1604fe5b05fe7b2997f0cb1d3a52"
-  version "0.1.5"
+  url "https://github.com/sothearasao/keys-layer/archive/499a4a599e16fd6675f40c56b132ad48c570ed58.tar.gz"
+  sha256 "3b66adc95693a262bbbcc7258fdb930df84bf70d5e8090e4d0818ea5f16d12dc"
+  version "0.1.6"
   license "MIT"
   head "https://github.com/sothearasao/keys-layer.git", branch: "main"
 

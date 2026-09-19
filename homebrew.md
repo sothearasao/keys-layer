@@ -17,7 +17,7 @@ brew install sothearasao/keys-layer/keys-layer
 keys-layer-setup
 ```
 
-Stable installs **v0.1.5**. For the latest `main` branch instead:
+Stable installs **v0.1.6** (includes the §/± grave-key fix). For the latest `main` branch instead:
 
 ```bash
 brew install --HEAD sothearasao/keys-layer/keys-layer
@@ -84,6 +84,7 @@ Re-check Input Monitoring if the log shows `not permitted` after an upgrade.
 | Symptom | Fix |
 |---------|-----|
 | `unable to run rust-objcopy` during `brew install` | Fixed in the formula (`CARGO_PROFILE_RELEASE_STRIP=none`). Update the tap / reinstall `--HEAD`. Or: `export CARGO_PROFILE_RELEASE_STRIP=none` and use `./scripts/install.sh`. |
+| Key left of `1` types `§`/`±` instead of `` ` ``/`~` | Fixed in **v0.1.6+** (`iso_grave_swap` off by default). `brew update && brew upgrade keys-layer`, then `sudo launchctl kickstart -k system/local.keys-layer`. If you still need the old swap: `iso_grave_swap = true` in config. |
 | `keys-layer-setup: command not found` | Install failed — fix the build first, then `brew install …` again |
 | Cursor stuck / keyboard dies with BT mouse | Set `devices = ["Apple Internal"]` (see [configuration.md](./configuration.md#listing-devices)); upgrade past the seize filter fix |
 | Keyboard dead after sleep / remapper wedged | **Emergency (mouse OK):** `keys-layer-emergency-stop` or `sudo launchctl bootout system/local.keys-layer && sudo pkill -9 keys-layer`. Then upgrade `--HEAD` and `keys-layer-setup` when you want remaps back. |

@@ -11,8 +11,11 @@
 class KeysLayer < Formula
   desc "Hold-to-layer keyboard remapper for macOS (Karabiner VirtualHID)"
   homepage "https://github.com/sothearasao/keys-layer"
-  url "https://github.com/sothearasao/keys-layer/archive/refs/tags/v0.1.3.tar.gz"
-  sha256 "7289ed4fd2125e7ee5efb996d518a84bb0559a5b4e925b821922fdd036a8ba1c"
+  # install() copies scripts/keys-layer-emergency-stop.sh from this archive.
+  # Keep url on a snapshot that actually contains that file (v0.1.3 / v0.1.4 do not).
+  url "https://github.com/sothearasao/keys-layer/archive/6a2010640f5e6e5f4e28a7b2391563595ebd42aa.tar.gz"
+  sha256 "06a2f183ba8895a91d336be08f611e0b36ff1604fe5b05fe7b2997f0cb1d3a52"
+  version "0.1.5"
   license "MIT"
   head "https://github.com/sothearasao/keys-layer.git", branch: "main"
 

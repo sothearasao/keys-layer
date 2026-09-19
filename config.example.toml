@@ -12,6 +12,9 @@ devices = ["Apple Internal"]
 # F3/F4 stay as F-keys (no Mission Control / Spotlight via VirtualHID).
 # Set [] to disable. See configuration.md § F1–F12.
 f_row_media_devices = ["Apple Internal"]
+# macOS: only enable if the key left of 1 types §/± *without* this setting
+# and `/~ with it. Default off — with modern VirtualHID the old swap causes §/±.
+# iso_grave_swap = true
 
 # Hold F → mod_f. Hold Caps → mod_caps (vim arrows).
 [layer.base]

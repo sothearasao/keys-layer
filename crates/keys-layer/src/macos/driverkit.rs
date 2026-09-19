@@ -40,6 +40,8 @@ static SINK_RECOVER: AtomicBool = AtomicBool::new(false);
 static INPUT_SEIZED: AtomicBool = AtomicBool::new(false);
 /// Recoveries in the current window (circuit breaker).
 static RECOVER_STREAK: AtomicU32 = AtomicU32::new(0);
+/// When true, swap grave ↔ non_us_backslash for VirtualHID (see settings.iso_grave_swap).
+static ISO_GRAVE_SWAP: AtomicBool = AtomicBool::new(false);
 
 /// Print HID product names useful for `settings.devices` (does not seize anything).
 pub fn list_devices() -> Result<(), String> {
@@ -128,6 +130,7 @@ pub fn run(config_path: &Path) -> Result<(), String> {
             eprintln!("F-row media (Fn/Globe) enabled for {n} device(s)");
         }
     }
+    set_iso_grave_swap(config.settings.iso_grave_swap);
     let devices = Arc::new(Mutex::new(device_patterns.clone()));
     let f_row_media_devices = Arc::new(Mutex::new(config.settings.f_row_media_devices.clone()));
     let suppress_native_caps = config.is_native_disabled(&KeyName::new("caps_lock"));
@@ -747,9 +750,22 @@ fn is_function_row(code: u32) -> bool {
     (0x3A..=0x45).contains(&code)
 }
 
-/// VirtualHID often reports as ISO; swap grave ↔ non_us_backslash so ANSI
-/// boards type `/~ instead of §/±.
+/// Optionally swap grave ↔ non_us_backslash for VirtualHID.
+///
+/// Older ISO VirtualHID setups needed this so ANSI boards type `/~ instead of
+/// §/±. Current VirtualHID often reports as ANSI — swapping then *causes*
+/// §/±. Controlled by `settings.iso_grave_swap` (default false).
+pub(super) fn set_iso_grave_swap(enabled: bool) {
+    ISO_GRAVE_SWAP.store(enabled, Ordering::SeqCst);
+    if enabled {
+        eprintln!("iso_grave_swap: on (grave ↔ non_us_backslash)");
+    }
+}
+
 fn fix_iso_virtual_usage(code: u32) -> u32 {
+    if !ISO_GRAVE_SWAP.load(Ordering::SeqCst) {
+        return code;
+    }
     match code {
         0x35 => 0x64,
         0x64 => 0x35,

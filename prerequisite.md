@@ -37,7 +37,17 @@ KE will keep the VirtualHID **daemon** running for you.
 
 ### Option B — Standalone driver pkg
 
-1. Download a release:  
+Automated (downloads VirtualHIDDevice **6.x**, `forceActivate`, starts the daemon):
+
+```bash
+./scripts/setup-virtualhid.sh
+```
+
+Then enable the Driver Extension (same System Settings path as Option A). Re-run the script if the daemon is still down.
+
+Manual:
+
+1. Download a **6.x** release:  
    https://github.com/pqrs-org/Karabiner-DriverKit-VirtualHIDDevice/releases
 
    > This project uses `karabiner-driverkit` **0.3.x** (matches Karabiner-Elements ~6.x).  

@@ -74,6 +74,7 @@ f_row_media_devices = ["Apple Internal"]  # Fn-aware F-row media (default)
 | `base_layer` | string | `"base"` | Layer active when the program starts (must exist) |
 | `devices` | string array | `[]` (all keyboards) | Product-name substrings to seize. **macOS: strongly prefer an allowlist** (e.g. `["Apple Internal"]`) — empty seizes every keyboard-class HID device; many Bluetooth mice expose one and seizing them freezes the cursor. Pointer-like names are skipped automatically, but an allowlist is safer. See [Listing devices](#listing-devices). |
 | `f_row_media_devices` | string array | `["Apple Internal"]` | Product-name substrings that get F1–F12 ↔ media. **macOS:** Fn/Globe + System Settings. **Linux:** media by default; hold `KEY_FN` for real F-keys when the board sends it. F3/F4 stay F-keys. Set `[]` to disable. |
+| `iso_grave_swap` | bool | `false` | **macOS only.** Swap HID grave ↔ `non_us_backslash` when emitting through VirtualHID. Leave off unless that key types `§`/`±` and enabling this restores `` ` ``/`~`. |
 
 ### Listing devices
 

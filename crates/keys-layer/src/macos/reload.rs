@@ -12,7 +12,7 @@ use std::time::{Duration, SystemTime};
 use keys_layer_core::{load_config, Engine, KeyName};
 
 use super::caps_lock;
-use super::driverkit::{device_hashes_matching, emit_outputs};
+use super::driverkit::{device_hashes_matching, emit_outputs, set_iso_grave_swap};
 
 static RELOAD_REQUESTED: AtomicBool = AtomicBool::new(false);
 
@@ -99,6 +99,7 @@ fn try_reload(
 
     let new_devices = config.settings.devices.clone();
     let new_media_patterns = config.settings.f_row_media_devices.clone();
+    let iso_grave_swap = config.settings.iso_grave_swap;
     let new_media = device_hashes_matching(&new_media_patterns);
     let suppress_caps = config.is_native_disabled(&KeyName::new("caps_lock"));
 
@@ -111,6 +112,7 @@ fn try_reload(
         let mut eng = engine.lock().expect("engine lock");
         eng.reload(config)
     };
+    set_iso_grave_swap(iso_grave_swap);
     emit_outputs(&releases);
 
     *handles.f_row_media_hashes.lock().expect("media lock") = new_media;

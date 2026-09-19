@@ -38,6 +38,10 @@ pub struct Settings {
     /// Product-name substrings that get Mac-style F1–F12 ↔ media (Fn/Globe).
     /// Default: `["Apple Internal"]`. Empty disables the feature.
     pub f_row_media_devices: Vec<String>,
+    /// macOS only: swap HID grave ↔ non_us_backslash when emitting via VirtualHID.
+    /// Needed on some older ISO VirtualHID setups so ANSI boards type `/~;
+    /// leave false (default) if that key types §/± while keys-layer runs.
+    pub iso_grave_swap: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -113,6 +117,9 @@ struct RawSettings {
     /// Devices that get Fn-aware F-row media (default: Apple Internal).
     #[serde(default = "default_f_row_media_devices")]
     f_row_media_devices: Vec<String>,
+    /// Swap grave ↔ ISO extra key for VirtualHID (macOS). Default off.
+    #[serde(default)]
+    iso_grave_swap: bool,
 }
 
 impl Default for RawSettings {
@@ -122,6 +129,7 @@ impl Default for RawSettings {
             base_layer: DEFAULT_BASE_LAYER.to_string(),
             devices: Vec::new(),
             f_row_media_devices: default_f_row_media_devices(),
+            iso_grave_swap: false,
         }
     }
 }
@@ -250,6 +258,7 @@ impl Config {
                 base_layer: raw.settings.base_layer,
                 devices: raw.settings.devices,
                 f_row_media_devices: raw.settings.f_row_media_devices,
+                iso_grave_swap: raw.settings.iso_grave_swap,
             },
             layers,
         })

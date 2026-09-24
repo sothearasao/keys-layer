@@ -85,6 +85,7 @@ Re-check Input Monitoring if the log shows `not permitted` after an upgrade.
 |---------|-----|
 | `unable to run rust-objcopy` during `brew install` | Fixed in the formula (`CARGO_PROFILE_RELEASE_STRIP=none`). Update the tap / reinstall `--HEAD`. Or: `export CARGO_PROFILE_RELEASE_STRIP=none` and use `./scripts/install.sh`. |
 | Key left of `1` types `§`/`±` instead of `` ` ``/`~` | Fixed in **v0.1.6+** (`iso_grave_swap` off by default). `brew update && brew upgrade keys-layer`, then `sudo launchctl kickstart -k system/local.keys-layer`. If you still need the old swap: `iso_grave_swap = true` in config. |
+| Keyboard freezes every few seconds after macOS upgrade; log shows `connect_failed asio.system:2` | VirtualHID **daemon** not running. `keys-layer-emergency-stop`, then `./scripts/setup-virtualhid.sh --no-pkg`, re-enable Driver Extensions, `keys-layer-setup`. |
 | `keys-layer-setup: command not found` | Install failed — fix the build first, then `brew install …` again |
 | Cursor stuck / keyboard dies with BT mouse | Set `devices = ["Apple Internal"]` (see [configuration.md](./configuration.md#listing-devices)); upgrade past the seize filter fix |
 | Keyboard dead after sleep / remapper wedged | **Emergency (mouse OK):** `keys-layer-emergency-stop` or `sudo launchctl bootout system/local.keys-layer && sudo pkill -9 keys-layer`. Then upgrade `--HEAD` and `keys-layer-setup` when you want remaps back. |

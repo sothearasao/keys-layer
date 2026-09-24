@@ -76,6 +76,25 @@ systemextensionsctl list | grep -i pqrs
 
 You should see the daemon process and an activated pqrs extension.
 
+### After a macOS upgrade
+
+Driver extensions often reset, and a background-only VirtualHID daemon dies. keys-layer then **KeepAlive-loops**: seize keyboard → `connect_failed asio.system:2` → release → restart every few seconds (keyboard “dies” periodically).
+
+```bash
+keys-layer-emergency-stop          # stop the loop; keyboard back to macOS
+./scripts/setup-virtualhid.sh --no-pkg   # forceActivate + persistent daemon LaunchDaemon
+keys-layer-setup                   # start keys-layer again
+```
+
+Confirm:
+
+```bash
+pgrep -lf Karabiner-VirtualHIDDevice-Daemon
+tail -20 /var/log/keys-layer.log
+# expect: keys-layer (DriverKit) running …
+# not: connect_failed asio.system:2
+```
+
 ---
 
 ## 2. Privacy permissions

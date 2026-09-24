@@ -91,40 +91,47 @@ else
   echo "    forceActivate failed — enable the Driver Extension, then re-run this script" >&2
 fi
 
-start_daemon() {
-  local plist
-  for plist in \
-    "/Library/LaunchDaemons/${DAEMON_LABEL}.plist" \
-    "/Library/Application Support/org.pqrs/Karabiner-DriverKit-VirtualHIDDevice/Library/LaunchDaemons/${DAEMON_LABEL}.plist"
-  do
-    if [[ -f "${plist}" ]]; then
-      echo "    using ${plist}"
-      sudo launchctl bootout "system/${DAEMON_LABEL}" 2>/dev/null || true
-      sudo launchctl bootstrap system "${plist}" 2>/dev/null || true
-      sudo launchctl kickstart -k "system/${DAEMON_LABEL}" 2>/dev/null || true
-      return 0
-    fi
-  done
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PLIST_SRC="${SCRIPT_DIR}/../packaging/org.pqrs.Karabiner-VirtualHIDDevice-Daemon.plist"
+PLIST_DEST="/Library/LaunchDaemons/${DAEMON_LABEL}.plist"
 
+install_daemon_plist() {
+  if [[ ! -f "${PLIST_SRC}" ]]; then
+    echo "    warning: missing ${PLIST_SRC} — starting daemon without LaunchDaemon" >&2
+    return 1
+  fi
   if [[ ! -x "${DAEMON}" ]]; then
-    echo "    warning: daemon binary not found:" >&2
-    echo "      ${DAEMON}" >&2
+    echo "    warning: daemon binary not found: ${DAEMON}" >&2
     return 1
   fi
 
-  echo "    starting daemon in background"
+  echo "==> installing LaunchDaemon ${DAEMON_LABEL}"
+  # Stop any ad-hoc background copy from an older setup-virtualhid run.
   sudo pkill -x Karabiner-VirtualHIDDevice-Daemon 2>/dev/null || true
-  sudo "${DAEMON}" >/tmp/karabiner-virtualhid-daemon.log 2>&1 &
-  disown || true
+  sudo cp "${PLIST_SRC}" "${PLIST_DEST}"
+  sudo chown root:wheel "${PLIST_DEST}"
+  sudo chmod 644 "${PLIST_DEST}"
+
+  sudo launchctl bootout "system/${DAEMON_LABEL}" 2>/dev/null || true
+  # macOS 26/27: bootstrap can fail with I/O error until the service is enabled.
+  sudo launchctl enable "system/${DAEMON_LABEL}" 2>/dev/null || true
+  if ! sudo launchctl bootstrap system "${PLIST_DEST}" 2>/dev/null; then
+    sudo launchctl enable "system/${DAEMON_LABEL}" 2>/dev/null || true
+    sudo launchctl bootstrap system "${PLIST_DEST}"
+  fi
+  sudo launchctl kickstart -k "system/${DAEMON_LABEL}" 2>/dev/null || true
+  return 0
 }
 
-if pgrep -x Karabiner-VirtualHIDDevice-Daemon >/dev/null 2>&1; then
-  echo "==> daemon already running"
-else
-  echo "==> starting VirtualHID daemon"
-  start_daemon || true
-  sleep 0.4
+echo "==> starting VirtualHID daemon (persistent LaunchDaemon)"
+if ! install_daemon_plist; then
+  if [[ -x "${DAEMON}" ]]; then
+    echo "    fallback: starting daemon in background (will NOT survive reboot)"
+    sudo "${DAEMON}" >/tmp/karabiner-virtualhid-daemon.log 2>&1 &
+    disown || true
+  fi
 fi
+sleep 0.6
 
 echo "==> disabling Karabiner-Core-Service if present (conflicts with keys-layer)"
 osascript -e 'quit app "Karabiner-Elements"' 2>/dev/null || true
@@ -147,6 +154,11 @@ if pgrep -x Karabiner-VirtualHIDDevice-Daemon >/dev/null 2>&1; then
 else
   echo "    daemon:  NOT running"
 fi
+if [[ -f "${PLIST_DEST}" ]]; then
+  echo "    plist:   ${PLIST_DEST}"
+else
+  echo "    plist:   missing"
+fi
 if command -v systemextensionsctl >/dev/null 2>&1; then
   systemextensionsctl list 2>/dev/null | grep -i pqrs || echo "    dext:    not listed yet (enable it in System Settings)"
 fi
@@ -156,8 +168,12 @@ echo "==> still required (macOS will not automate this):"
 echo "    System Settings → General → Login Items & Extensions → Driver Extensions"
 echo "    → enable org.pqrs.Karabiner-DriverKit-VirtualHIDDevice"
 echo
-echo "Then install keys-layer (if you have not):"
-echo "    ./scripts/install.sh"
-echo "    # or: brew install --HEAD sothearasao/keys-layer/keys-layer && keys-layer-setup"
+echo "Then start keys-layer again:"
+echo "    keys-layer-setup"
+echo "    # or: sudo launchctl bootstrap system /Library/LaunchDaemons/local.keys-layer.plist"
+echo "    sudo launchctl kickstart -k system/local.keys-layer"
 echo
+echo "If keys freeze in a loop after a macOS upgrade, stop remaps first:"
+echo "    keys-layer-emergency-stop"
+echo "    ./scripts/setup-virtualhid.sh --no-pkg"
 echo "Re-run this script after enabling the Driver Extension if the daemon is down."

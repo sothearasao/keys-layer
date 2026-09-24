@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Persistent Karabiner VirtualHIDDevice daemon (needed by keys-layer).
+  Installed by scripts/setup-virtualhid.sh — without this, macOS upgrades
+  often leave the daemon dead and keys-layer KeepAlive-loops every ~30s.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>org.pqrs.Karabiner-VirtualHIDDevice-Daemon</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Library/Application Support/org.pqrs/Karabiner-DriverKit-VirtualHIDDevice/Applications/Karabiner-VirtualHIDDevice-Daemon.app/Contents/MacOS/Karabiner-VirtualHIDDevice-Daemon</string>
+  </array>
+  <key>ProcessType</key>
+  <string>Interactive</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>5</integer>
+  <key>StandardOutPath</key>
+  <string>/var/log/karabiner-virtualhiddevice-daemon.log</string>
+  <key>StandardErrorPath</key>
+  <string>/var/log/karabiner-virtualhiddevice-daemon.log</string>
+</dict>
+</plist>

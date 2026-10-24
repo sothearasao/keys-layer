@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+# Control the keys-layer LaunchDaemon (status / on / off).
+#
+# Usage:
+#   keys-layer-ctl status
+#   keys-layer-ctl on      # needs root (sudo or admin AppleScript)
+#   keys-layer-ctl off     # needs root
+#
+# Exit codes: status → 0 if remapping process is running, 1 if off.
+
+set -euo pipefail
+
+LABEL="local.keys-layer"
+PLIST="/Library/LaunchDaemons/${LABEL}.plist"
+
+usage() {
+  cat <<'EOF'
+keys-layer-ctl — start/stop/status for the keys-layer daemon
+
+  keys-layer-ctl status   print on|off (exit 0 if on)
+  keys-layer-ctl on       bootstrap + kickstart LaunchDaemon
+  keys-layer-ctl off      bootout + kill remapper (keyboard back to macOS)
+EOF
+}
+
+is_running() {
+  # Exact process name of the remapper binary (not the menu bar app).
+  pgrep -x keys-layer >/dev/null 2>&1
+}
+
+cmd_status() {
+  if is_running; then
+    echo "on"
+    return 0
+  fi
+  echo "off"
+  return 1
+}
+
+cmd_off() {
+  launchctl bootout "system/${LABEL}" 2>/dev/null || true
+  pkill -9 -x keys-layer 2>/dev/null || true
+  # Foreground sudo copies sometimes keep a path-based name.
+  pkill -9 -f '/keys-layer( |$)' 2>/dev/null || true
+  sleep 0.2
+  if is_running; then
+    echo "error: keys-layer still running" >&2
+    pgrep -lf keys-layer >&2 || true
+    exit 1
+  fi
+  echo "off"
+}
+
+cmd_on() {
+  if [[ ! -f "${PLIST}" ]]; then
+    echo "error: missing ${PLIST}" >&2
+    echo "Run keys-layer-setup once to install the LaunchDaemon." >&2
+    exit 1
+  fi
+  launchctl bootout "system/${LABEL}" 2>/dev/null || true
+  launchctl enable "system/${LABEL}" 2>/dev/null || true
+  if ! launchctl bootstrap system "${PLIST}" 2>/dev/null; then
+    launchctl enable "system/${LABEL}" 2>/dev/null || true
+    launchctl bootstrap system "${PLIST}"
+  fi
+  launchctl kickstart -k "system/${LABEL}" 2>/dev/null || true
+  # Give KeepAlive a moment to spawn.
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    if is_running; then
+      echo "on"
+      return 0
+    fi
+    sleep 0.3
+  done
+  echo "warning: LaunchDaemon loaded but keys-layer process not seen yet" >&2
+  echo "check: tail -20 /var/log/keys-layer.log" >&2
+  echo "on"
+}
+
+cmd="${1:-}"
+case "${cmd}" in
+  status) cmd_status ;;
+  on)
+    if [[ "$(id -u)" -ne 0 ]]; then
+      echo "error: 'on' requires root (sudo keys-layer-ctl on)" >&2
+      exit 1
+    fi
+    cmd_on
+    ;;
+  off)
+    if [[ "$(id -u)" -ne 0 ]]; then
+      echo "error: 'off' requires root (sudo keys-layer-ctl off)" >&2
+      exit 1
+    fi
+    cmd_off
+    ;;
+  -h|--help|"")
+    usage
+    [[ -n "${cmd}" ]]
+    ;;
+  *)
+    echo "unknown command: ${cmd}" >&2
+    usage >&2
+    exit 1
+    ;;
+esac

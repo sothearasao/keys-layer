@@ -21,6 +21,7 @@ class KeysLayer < Formula
 
   depends_on :macos
   depends_on "rust" => :build
+  depends_on xcode: ["14.0", :build]
 
   def install
     # Homebrew's rust bottle ships `rust-objcopy` as a symlink to `llvm-objcopy`.
@@ -36,6 +37,7 @@ class KeysLayer < Formula
     pkgshare.install "packaging/local.keys-layer.plist.in"
     pkgshare.install "scripts/keys-layer-setup"
     pkgshare.install "scripts/keys-layer-emergency-stop.sh"
+    bin.install "scripts/keys-layer-ctl"
 
     # Wrapper so `keys-layer-setup` finds share files next to itself via env.
     (bin/"keys-layer-setup").write <<~SH
@@ -56,6 +58,17 @@ class KeysLayer < Formula
     SH
     chmod 0755, bin/"keys-layer-emergency-stop"
     chmod 0755, pkgshare/"keys-layer-emergency-stop.sh"
+
+    # Menu bar toggle (Turn Remapping On/Off). Needs Swift toolchain at build time.
+    system "./scripts/build-menubar-app.sh"
+    prefix.install "dist/Keys Layer.app"
+    (bin/"keys-layer-menu").write <<~SH
+      #!/bin/bash
+      set -euo pipefail
+      export KEYS_LAYER_CTL="#{opt_bin}/keys-layer-ctl"
+      open "#{opt_prefix}/Keys Layer.app"
+    SH
+    chmod 0755, bin/"keys-layer-menu"
   end
 
   def caveats
@@ -66,12 +79,14 @@ class KeysLayer < Formula
             #{opt_bin}/keys-layer
         • Do not run Karabiner-Elements Core-Service alongside keys-layer
 
-      Finish setup (config + LaunchDaemon):
+      Finish setup (config + LaunchDaemon plist; remapping stays OFF):
         keys-layer-setup
 
-      Then grant Accessibility + Input Monitoring to the binary above,
-      and restart (TCC applies only to a new process):
-        sudo launchctl kickstart -k system/local.keys-layer
+      Grant Accessibility + Input Monitoring to the binary above, then
+      control remapping only from the menu bar (does not start at login):
+        keys-layer-menu
+        # or open: #{opt_prefix}/Keys Layer.app
+        # CLI: keys-layer-ctl on|off|status
 
       If the keyboard ever dies (mouse still works):
         keys-layer-emergency-stop
@@ -87,5 +102,7 @@ class KeysLayer < Formula
     assert_path_exists bin/"keys-layer"
     assert_predicate bin/"keys-layer-setup", :executable?
     assert_predicate bin/"keys-layer-emergency-stop", :executable?
+    assert_predicate bin/"keys-layer-ctl", :executable?
+    assert_path_exists prefix/"Keys Layer.app"
   end
 end

@@ -4,21 +4,27 @@
 # Finds the keys-layer binary on PATH (Homebrew prefix or /usr/local/bin).
 #
 # Usage:
-#   keys-layer-setup              # config + daemon
+#   keys-layer-setup              # config + LaunchDaemon (remapping left OFF)
+#   keys-layer-setup --start      # also start remapping now
 #   keys-layer-setup --no-daemon  # config only
 
 set -euo pipefail
 
 NO_DAEMON=0
+START_NOW=0
 for arg in "$@"; do
   case "$arg" in
     --no-daemon) NO_DAEMON=1 ;;
+    --start) START_NOW=1 ;;
     -h|--help)
       cat <<'EOF'
-keys-layer-setup — create config and optional LaunchDaemon
+keys-layer-setup — create config and LaunchDaemon (menu-bar controlled)
 
-  keys-layer-setup              config + autostart daemon
+  keys-layer-setup              config + plist; remapping stays OFF
+  keys-layer-setup --start      also start remapping now
   keys-layer-setup --no-daemon  config only
+
+Use Keys Layer.app (or keys-layer-ctl on|off) to toggle remapping.
 EOF
       exit 0
       ;;
@@ -119,7 +125,7 @@ if [[ -z "${PLIST_TEMPLATE}" ]]; then
   exit 1
 fi
 
-echo "==> installing LaunchDaemon"
+echo "==> installing LaunchDaemon (manual start — menu bar / keys-layer-ctl)"
 TMP_PLIST="$(mktemp)"
 sed \
   -e "s|__KEYS_LAYER_BIN__|${BIN_PATH}|g" \
@@ -131,20 +137,31 @@ rm -f "${TMP_PLIST}"
 sudo chown root:wheel "${PLIST_DEST}"
 sudo chmod 644 "${PLIST_DEST}"
 
+# Leave remapping OFF; only the menu bar / ctl starts it.
 sudo launchctl bootout "system/${PLIST_LABEL}" 2>/dev/null || true
-sudo launchctl bootstrap system "${PLIST_DEST}"
-sudo launchctl kickstart -k "system/${PLIST_LABEL}"
+sudo pkill -9 -x keys-layer 2>/dev/null || true
 
 echo "==> disabling Karabiner-Core-Service if present"
 sudo launchctl bootout system/org.pqrs.service.daemon.Karabiner-Core-Service 2>/dev/null || true
 sudo launchctl disable system/org.pqrs.service.daemon.Karabiner-Core-Service 2>/dev/null || true
 sudo killall Karabiner-Core-Service 2>/dev/null || true
 
+if [[ "${START_NOW}" -eq 1 ]]; then
+  echo "==> starting remapping (--start)"
+  sudo launchctl enable "system/${PLIST_LABEL}" 2>/dev/null || true
+  sudo launchctl bootstrap system "${PLIST_DEST}" 2>/dev/null || \
+    sudo launchctl bootstrap system "${PLIST_DEST}"
+  sudo launchctl kickstart -k "system/${PLIST_LABEL}"
+fi
+
 echo
 echo "==> done"
-echo "The daemon is already running. Grant Accessibility + Input Monitoring to:"
+echo "Remapping is controlled from the menu bar (not at login)."
+echo "  open Keys Layer.app   # or: keys-layer-menu"
+echo "  keys-layer-ctl on|off|status"
+echo
+echo "Grant Accessibility + Input Monitoring to:"
 echo "  ${BIN_PATH}"
-echo "Then restart it so TCC applies (re-running setup is unnecessary):"
-echo "  sudo launchctl kickstart -k system/${PLIST_LABEL}"
-echo "Verify:"
+echo "Then Turn Remapping On once so TCC applies to a fresh process."
+echo "Verify when on:"
 echo "  tail -20 /var/log/keys-layer.log"

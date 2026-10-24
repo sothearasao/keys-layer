@@ -33,6 +33,7 @@ brew install sothearasao/keys-layer/keys-layer
 keys-layer-setup
 # grant Accessibility + Input Monitoring to:
 #   $(brew --prefix)/opt/keys-layer/bin/keys-layer
+keys-layer-menu   # menu bar: Turn Remapping On/Off
 ```
 
 From source:
@@ -47,6 +48,7 @@ tail -20 /var/log/keys-layer.log
 |-----|------|
 | [quickstart.md](./quickstart.md) | First-time quickstart (from source) |
 | [homebrew.md](./homebrew.md) | `brew install` (macOS) |
+| [menubar.md](./menubar.md) | Menu bar on/off toggle (macOS) |
 | [linux.md](./linux.md) | Linux: `./scripts/install-linux.sh` |
 | [windows.md](./windows.md) | Windows: installer / `.\scripts\install-windows.ps1` |
 | [prerequisite.md](./prerequisite.md) | Driver / permissions (macOS; required forever) |

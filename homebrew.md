@@ -34,7 +34,7 @@ brew info sothearasao/keys-layer/keys-layer
 ## Finish setup
 
 1. **VirtualHID** — enable the DriverKit extension ([prerequisite.md](./prerequisite.md)).
-2. **Config + LaunchDaemon:**
+2. **Config + LaunchDaemon plist** (remapping stays **off** until you turn it on):
 
 ```bash
 keys-layer-setup
@@ -44,13 +44,15 @@ keys-layer-setup
    `$(brew --prefix)/opt/keys-layer/bin/keys-layer`  
    (also shown under **Caveats** in `brew info sothearasao/keys-layer/keys-layer`)
 
-4. **Restart the daemon** — TCC only applies on a new process; the first start usually ran before you toggled Privacy:
+4. **Menu bar** — only way remapping starts (not at login). Open the app, then **Turn Remapping On** (password once; applies TCC to a new process):
 
 ```bash
-sudo launchctl kickstart -k system/local.keys-layer
+keys-layer-menu
+# or: open "$(brew --prefix)/opt/keys-layer/Keys Layer.app"
+# CLI: keys-layer-ctl on|off|status
 ```
 
-You do **not** need to re-run `keys-layer-setup` for that — setup only helps because it kickstarts at the end.
+See [menubar.md](./menubar.md).
 
 Config only (no daemon):
 

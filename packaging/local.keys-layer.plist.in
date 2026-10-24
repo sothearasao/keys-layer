@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Manual start only — menu bar / keys-layer-ctl on|off.
+  RunAtLoad and KeepAlive are false so remapping stays OFF across reboot
+  until you turn it on from Keys Layer.app.
+-->
 <plist version="1.0">
 <dict>
   <key>Label</key>
@@ -10,12 +15,9 @@
     <string>__KEYS_LAYER_CONFIG__</string>
   </array>
   <key>RunAtLoad</key>
-  <true/>
+  <false/>
   <key>KeepAlive</key>
-  <true/>
-  <!-- Avoid tight restart loops if VirtualHID is slow after login. -->
-  <key>ThrottleInterval</key>
-  <integer>30</integer>
+  <false/>
   <key>StandardOutPath</key>
   <string>/var/log/keys-layer.log</string>
   <key>StandardErrorPath</key>

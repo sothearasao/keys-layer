@@ -134,10 +134,10 @@ if [[ "${NO_DAEMON}" -eq 0 ]]; then
   sudo chown root:wheel "${PLIST_DEST}"
   sudo chmod 644 "${PLIST_DEST}"
 
+  # Install plist only — remapping stays OFF until menu bar / keys-layer-ctl on.
   sudo launchctl bootout "system/${PLIST_LABEL}" 2>/dev/null || true
-  sudo launchctl bootstrap system "${PLIST_DEST}"
-  sudo launchctl kickstart -k "system/${PLIST_LABEL}"
-  echo "    daemon started (log: /var/log/keys-layer.log)"
+  sudo pkill -9 -x keys-layer 2>/dev/null || true
+  echo "    plist installed; remapping OFF (use Keys Layer.app or keys-layer-ctl on)"
 else
   echo "==> skipping LaunchDaemon (--no-daemon)"
 fi
@@ -153,6 +153,28 @@ else
   echo "    Core-Service not running (good)"
 fi
 
+# --- menu bar toggle app + ctl ---
+echo "==> installing keys-layer-ctl"
+sudo cp "${ROOT}/scripts/keys-layer-ctl" "${BIN_DIR}/keys-layer-ctl"
+sudo chown root:wheel "${BIN_DIR}/keys-layer-ctl"
+sudo chmod 755 "${BIN_DIR}/keys-layer-ctl"
+
+if command -v swift >/dev/null 2>&1; then
+  echo "==> building menu bar app (Keys Layer.app)"
+  DEST="${ROOT}/dist" "${ROOT}/scripts/build-menubar-app.sh"
+  APP_SRC="${ROOT}/dist/Keys Layer.app"
+  APP_DEST="/Applications/Keys Layer.app"
+  if [[ -d "${APP_SRC}" ]]; then
+    sudo rm -rf "${APP_DEST}"
+    sudo cp -R "${APP_SRC}" "${APP_DEST}"
+    sudo chown -R "${REAL_USER}:staff" "${APP_DEST}" 2>/dev/null || true
+    echo "    installed ${APP_DEST}"
+    echo "    open it once (or: open \"${APP_DEST}\") — menu bar keyboard icon toggles remaps"
+  fi
+else
+  echo "==> skipping menu bar app (swift not found)"
+fi
+
 echo
 echo "==> done"
 echo
@@ -166,16 +188,17 @@ echo "       (remove old ~/.cargo/bin/keys-layer entries if present)"
 echo "  3. Keep Karabiner-Elements remapping quit; VirtualHID daemon must stay running."
 echo
 if [[ "${NO_DAEMON}" -eq 0 ]]; then
-  echo "After enabling Accessibility + Input Monitoring, restart the daemon"
-  echo "(macOS does not apply TCC to an already-running process):"
-  echo "  sudo launchctl kickstart -k system/${PLIST_LABEL}"
+  echo "After enabling Accessibility + Input Monitoring, turn remapping ON from"
+  echo "the menu bar (or: sudo keys-layer-ctl on) so TCC applies to a new process."
   echo
-  echo "Verify:"
+  echo "Menu bar: open \"/Applications/Keys Layer.app\""
+  echo "  Remapping does NOT start at login — only when you turn it on."
+  echo
+  echo "Verify when on:"
+  echo "  keys-layer-ctl status"
   echo "  tail -20 /var/log/keys-layer.log"
-  echo "  sudo launchctl print system/${PLIST_LABEL} | head -20"
   echo
-  echo "Config edits hot-reload automatically (see /var/log/keys-layer.log)."
-  echo "After rebuilding the binary, re-check Privacy, then kickstart again."
+  echo "Config edits hot-reload while remapping is on."
 else
   echo "Run in foreground:"
   echo "  sudo ${BIN_PATH} ${CONFIG_PATH}"

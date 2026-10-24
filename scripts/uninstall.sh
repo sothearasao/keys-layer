@@ -59,12 +59,23 @@ else
 fi
 
 echo "==> removing binary"
-for path in "${BIN_PATH}" "${CARGO_BIN}"; do
+for path in "${BIN_PATH}" "${CARGO_BIN}" "/usr/local/bin/keys-layer-ctl" \
+  "/opt/homebrew/bin/keys-layer-ctl" "/usr/local/bin/keys-layer-menu" \
+  "/opt/homebrew/bin/keys-layer-menu"; do
   if [[ -e "${path}" ]]; then
     sudo rm -f "${path}" 2>/dev/null || rm -f "${path}"
     echo "    removed ${path}"
   fi
 done
+
+echo "==> removing menu bar app"
+for app in "/Applications/Keys Layer.app"; do
+  if [[ -d "${app}" ]]; then
+    sudo rm -rf "${app}"
+    echo "    removed ${app}"
+  fi
+done
+pkill -x KeysLayerMenu 2>/dev/null || true
 
 if [[ "${PURGE}" -eq 1 ]]; then
   if [[ -d "${CONFIG_DIR}" ]]; then

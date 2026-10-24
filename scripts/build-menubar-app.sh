@@ -64,6 +64,14 @@ cp "${BIN}" "${APP}/Contents/MacOS/KeysLayerMenu"
 cp "${PKG}/Info.plist" "${APP}/Contents/Info.plist"
 chmod 755 "${APP}/Contents/MacOS/KeysLayerMenu"
 
+RES="${PKG}/Resources"
+if [[ -f "${RES}/AppIcon.icns" ]]; then
+  cp "${RES}/AppIcon.icns" "${APP}/Contents/Resources/AppIcon.icns"
+fi
+if [[ -f "${RES}/MenuBarIcon.png" ]]; then
+  cp "${RES}/MenuBarIcon.png" "${APP}/Contents/Resources/MenuBarIcon.png"
+fi
+
 CTL_SRC="${KEYS_LAYER_CTL_SRC:-${ROOT}/scripts/keys-layer-ctl}"
 if [[ -f "${CTL_SRC}" ]]; then
   cp "${CTL_SRC}" "${APP}/Contents/MacOS/keys-layer-ctl"

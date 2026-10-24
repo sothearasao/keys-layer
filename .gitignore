@@ -12,6 +12,7 @@ target/
 dist/
 apps/KeysLayerMenu/.build/
 apps/KeysLayerMenu/.build-homebrew/
+apps/KeysLayerMenu/Resources/AppIcon.iconset/
 
 # cargo mutants
 **/mutants.out*/

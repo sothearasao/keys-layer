@@ -1,35 +1,32 @@
 # Menu bar toggle (macOS)
 
-Remapping is **off by default**. Use the menu bar (or `keys-layer-ctl`) as the only way to turn it on or off. It does **not** start at login.
+Remapping is **off by default**. Use **Keys Layer.app** in `/Applications` to turn it on or off. It does **not** start at login.
 
 Related: [homebrew](./homebrew.md) · [installation](./installation.md) · [prerequisite](./prerequisite.md)
 
 ---
 
-## Install
-
-Run setup once (installs the LaunchDaemon **plist**, leaves remapping **off**):
+## Install (Homebrew — simplest)
 
 ```bash
-keys-layer-setup
-# optional: keys-layer-setup --start   # turn remapping on immediately
+brew install --HEAD sothearasao/keys-layer/keys-layer
 ```
 
-**Homebrew**
+That puts **Keys Layer** in **/Applications**. Then:
+
+1. Grant **Accessibility** + **Input Monitoring** to  
+   `$(brew --prefix)/opt/keys-layer/bin/keys-layer`
+2. Open **Keys Layer** from Applications / Spotlight
+3. **Turn Remapping On** (password once — also creates config + LaunchDaemon if needed)
+
+You do **not** need to run `keys-layer-setup` for the normal path.
+
+### From source
 
 ```bash
-keys-layer-menu
-# app: $(brew --prefix)/opt/keys-layer/Keys Layer.app
-```
-
-**From source**
-
-```bash
-./scripts/install.sh
+./scripts/install.sh   # → /Applications/Keys Layer.app
 open "/Applications/Keys Layer.app"
 ```
-
-Enable **Launch Menu at Login** in the menu if you want the icon every boot (still does **not** start remapping).
 
 ---
 
@@ -37,12 +34,10 @@ Enable **Launch Menu at Login** in the menu if you want the icon every boot (sti
 
 | Item | Action |
 |------|--------|
-| **Turn Remapping On** | Starts remapping (admin password once) |
-| **Turn Remapping Off** | Stops remapping; keyboard back to macOS |
+| **Turn Remapping On** | Starts remapping (admin once; first time seeds config + plist) |
+| **Turn Remapping Off** | Stops remapping |
 | **Launch Menu at Login** | Menu icon at login only — remaps stay off until you turn them on |
-| **Open Config** / **Open Log** | Config / `/var/log/keys-layer.log` |
-
-Filled keyboard = **on**; outline = **off**. After reboot, remapping stays **off** until you turn it on again.
+| **Open Config** / **Open Log** | `~/.config/keys-layer/config.toml` / `/var/log/keys-layer.log` |
 
 ```bash
 keys-layer-ctl status
@@ -54,6 +49,5 @@ sudo keys-layer-ctl off
 
 ## Notes
 
-- The plist at `/Library/LaunchDaemons/local.keys-layer.plist` must stay installed — the menu uses it. It is **not** an autostart; `RunAtLoad` / `KeepAlive` are off.
-- On/off needs **admin** (Karabiner IPC is root-only).
+- Keep VirtualHID driver + daemon healthy ([prerequisite](./prerequisite.md)).
 - Emergency: **Turn Remapping Off** or `keys-layer-emergency-stop`.

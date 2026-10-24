@@ -2,11 +2,9 @@
 #
 #   brew tap sothearasao/keys-layer https://github.com/sothearasao/keys-layer.git
 #   brew trust sothearasao/keys-layer
-#   brew install sothearasao/keys-layer/keys-layer
-#   keys-layer-setup
-#
-# Latest from main:
 #   brew install --HEAD sothearasao/keys-layer/keys-layer
+#
+# After install: grant Privacy, open Keys Layer from /Applications, Turn On.
 
 class KeysLayer < Formula
   desc "Hold-to-layer keyboard remapper for macOS (Karabiner VirtualHID)"
@@ -38,9 +36,9 @@ class KeysLayer < Formula
     pkgshare.install "packaging/local.keys-layer.plist.in"
     pkgshare.install "scripts/keys-layer-setup"
     pkgshare.install "scripts/keys-layer-emergency-stop.sh"
-    bin.install "scripts/keys-layer-ctl"
+    pkgshare.install "scripts/keys-layer-ctl"
 
-    # Wrapper so `keys-layer-setup` finds share files next to itself via env.
+    # Wrappers so helpers find share files / binary via env (stable across upgrades).
     (bin/"keys-layer-setup").write <<~SH
       #!/bin/bash
       set -euo pipefail
@@ -51,6 +49,17 @@ class KeysLayer < Formula
     SH
     chmod 0755, bin/"keys-layer-setup"
     chmod 0755, pkgshare/"keys-layer-setup"
+
+    (bin/"keys-layer-ctl").write <<~SH
+      #!/bin/bash
+      set -euo pipefail
+      export KEYS_LAYER_BIN="#{opt_bin}/keys-layer"
+      export KEYS_LAYER_EXAMPLE="#{pkgshare}/examples/config.example.toml"
+      export KEYS_LAYER_PLIST_IN="#{pkgshare}/local.keys-layer.plist.in"
+      exec "#{pkgshare}/keys-layer-ctl" "$@"
+    SH
+    chmod 0755, bin/"keys-layer-ctl"
+    chmod 0755, pkgshare/"keys-layer-ctl"
 
     (bin/"keys-layer-emergency-stop").write <<~SH
       #!/bin/bash
@@ -68,7 +77,7 @@ class KeysLayer < Formula
         #!/bin/bash
         set -euo pipefail
         export KEYS_LAYER_CTL="#{opt_bin}/keys-layer-ctl"
-        open "#{opt_prefix}/Keys Layer.app"
+        open "/Applications/Keys Layer.app" 2>/dev/null || open "#{opt_prefix}/Keys Layer.app"
       SH
       chmod 0755, bin/"keys-layer-menu"
     else
@@ -76,29 +85,36 @@ class KeysLayer < Formula
     end
   end
 
+  def post_install
+    app_src = prefix/"Keys Layer.app"
+    return unless app_src.directory?
+
+    apps = Pathname.new("/Applications")
+    dest = apps/"Keys Layer.app"
+    # Install like a normal Mac app for Spotlight / Launchpad.
+    system "rm", "-rf", dest.to_s if dest.exist?
+    system "cp", "-R", app_src.to_s, dest.to_s
+    ohai "Installed Keys Layer.app → #{dest}"
+  end
+
   def caveats
     <<~EOS
       Permanent requirements (macOS):
         • Karabiner VirtualHIDDevice driver + daemon
+          (./scripts/setup-virtualhid.sh or Karabiner-Elements)
         • Accessibility + Input Monitoring for:
             #{opt_bin}/keys-layer
         • Do not run Karabiner-Elements Core-Service alongside keys-layer
 
-      Finish setup (config + LaunchDaemon plist; remapping stays OFF):
-        keys-layer-setup
+      Simple use:
+        1. Grant Accessibility + Input Monitoring to the binary above
+        2. Open "Keys Layer" from /Applications (or: keys-layer-menu)
+        3. Menu bar → Turn Remapping On  (admin password once;
+           creates config + LaunchDaemon on first On)
+        Remapping does NOT start at login — only when you turn it on.
 
-      Grant Accessibility + Input Monitoring to the binary above, then
-      control remapping only from the menu bar (does not start at login):
-        keys-layer-menu
-        # or open: #{opt_prefix}/Keys Layer.app
-        # CLI: keys-layer-ctl on|off|status
-
-      If the keyboard ever dies (mouse still works):
-        keys-layer-emergency-stop
-
-      Or run in the foreground:
-        sudo #{opt_bin}/keys-layer
-
+      Emergency stop: keys-layer-emergency-stop
+      Uninstall app copy: rm -rf "/Applications/Keys Layer.app"
       Docs: #{homepage}
     EOS
   end

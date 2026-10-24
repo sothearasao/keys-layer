@@ -3,7 +3,7 @@
 #
 # Usage:
 #   keys-layer-ctl status
-#   keys-layer-ctl on      # needs root (sudo or admin AppleScript)
+#   keys-layer-ctl on      # needs root — installs plist/config if missing
 #   keys-layer-ctl off     # needs root
 #
 # Exit codes: status → 0 if remapping process is running, 1 if off.
@@ -18,14 +18,126 @@ usage() {
 keys-layer-ctl — start/stop/status for the keys-layer daemon
 
   keys-layer-ctl status   print on|off (exit 0 if on)
-  keys-layer-ctl on       bootstrap + kickstart LaunchDaemon
-  keys-layer-ctl off      bootout + kill remapper (keyboard back to macOS)
+  keys-layer-ctl on       ensure config+plist, then start remapping
+  keys-layer-ctl off      stop remapping (keyboard back to macOS)
 EOF
 }
 
 is_running() {
-  # Exact process name of the remapper binary (not the menu bar app).
   pgrep -x keys-layer >/dev/null 2>&1
+}
+
+resolve_bin() {
+  if [[ -n "${KEYS_LAYER_BIN:-}" && -x "${KEYS_LAYER_BIN}" ]]; then
+    echo "${KEYS_LAYER_BIN}"
+    return
+  fi
+  for p in \
+    /opt/homebrew/opt/keys-layer/bin/keys-layer \
+    /usr/local/opt/keys-layer/bin/keys-layer \
+    /usr/local/bin/keys-layer
+  do
+    if [[ -x "$p" ]]; then
+      echo "$p"
+      return
+    fi
+  done
+  if command -v keys-layer >/dev/null 2>&1; then
+    command -v keys-layer
+    return
+  fi
+  echo ""
+}
+
+resolve_home() {
+  local u="${SUDO_USER:-${USER}}"
+  local h
+  h="$(dscl . -read "/Users/${u}" NFSHomeDirectory 2>/dev/null | awk '{print $2}')"
+  if [[ -n "$h" && -d "$h" ]]; then
+    echo "$h"
+  else
+    eval echo "~${u}"
+  fi
+}
+
+resolve_plist_template() {
+  local script_dir
+  script_dir="$(cd "$(dirname "$0")" && pwd)"
+  local c
+  for c in \
+    "${KEYS_LAYER_PLIST_IN:-}" \
+    "${script_dir}/local.keys-layer.plist.in" \
+    "${script_dir}/../packaging/local.keys-layer.plist.in" \
+    /opt/homebrew/opt/keys-layer/share/keys-layer/local.keys-layer.plist.in \
+    /usr/local/opt/keys-layer/share/keys-layer/local.keys-layer.plist.in
+  do
+    [[ -n "$c" && -f "$c" ]] && echo "$c" && return
+  done
+  echo ""
+}
+
+resolve_example_config() {
+  local script_dir
+  script_dir="$(cd "$(dirname "$0")" && pwd)"
+  local c
+  for c in \
+    "${KEYS_LAYER_EXAMPLE:-}" \
+    "${script_dir}/examples/config.example.toml" \
+    "${script_dir}/../config.example.toml" \
+    /opt/homebrew/opt/keys-layer/share/keys-layer/examples/config.example.toml \
+    /usr/local/opt/keys-layer/share/keys-layer/examples/config.example.toml
+  do
+    [[ -n "$c" && -f "$c" ]] && echo "$c" && return
+  done
+  echo ""
+}
+
+# First Turn On from the menu bar: seed config + LaunchDaemon plist.
+ensure_ready() {
+  local bin_path config_dir config_path template example real_user
+  bin_path="$(resolve_bin)"
+  if [[ -z "${bin_path}" ]]; then
+    echo "error: keys-layer binary not found" >&2
+    exit 1
+  fi
+
+  real_user="${SUDO_USER:-${USER}}"
+  config_dir="$(resolve_home)/.config/keys-layer"
+  config_path="${config_dir}/config.toml"
+  mkdir -p "${config_dir}"
+  if [[ ! -f "${config_path}" ]]; then
+    example="$(resolve_example_config)"
+    if [[ -z "${example}" ]]; then
+      echo "error: no config and no config.example.toml to copy" >&2
+      exit 1
+    fi
+    cp "${example}" "${config_path}"
+    chown "${real_user}" "${config_path}" 2>/dev/null || true
+    echo "created ${config_path}" >&2
+  fi
+
+  if [[ -f "${PLIST}" ]]; then
+    return 0
+  fi
+
+  template="$(resolve_plist_template)"
+  if [[ -z "${template}" ]]; then
+    echo "error: missing LaunchDaemon template; reinstall keys-layer" >&2
+    exit 1
+  fi
+
+  local tmp
+  tmp="$(mktemp)"
+  sed \
+    -e "s|__KEYS_LAYER_BIN__|${bin_path}|g" \
+    -e "s|__KEYS_LAYER_CONFIG__|${config_path}|g" \
+    "${template}" > "${tmp}"
+  plutil -lint "${tmp}" >/dev/null
+  cp "${tmp}" "${PLIST}"
+  rm -f "${tmp}"
+  chown root:wheel "${PLIST}"
+  chmod 644 "${PLIST}"
+  echo "installed ${PLIST}" >&2
 }
 
 cmd_status() {
@@ -40,7 +152,6 @@ cmd_status() {
 cmd_off() {
   launchctl bootout "system/${LABEL}" 2>/dev/null || true
   pkill -9 -x keys-layer 2>/dev/null || true
-  # Foreground sudo copies sometimes keep a path-based name.
   pkill -9 -f '/keys-layer( |$)' 2>/dev/null || true
   sleep 0.2
   if is_running; then
@@ -52,11 +163,7 @@ cmd_off() {
 }
 
 cmd_on() {
-  if [[ ! -f "${PLIST}" ]]; then
-    echo "error: missing ${PLIST}" >&2
-    echo "Run keys-layer-setup once to install the LaunchDaemon." >&2
-    exit 1
-  fi
+  ensure_ready
   launchctl bootout "system/${LABEL}" 2>/dev/null || true
   launchctl enable "system/${LABEL}" 2>/dev/null || true
   if ! launchctl bootstrap system "${PLIST}" 2>/dev/null; then
@@ -64,7 +171,6 @@ cmd_on() {
     launchctl bootstrap system "${PLIST}"
   fi
   launchctl kickstart -k "system/${LABEL}" 2>/dev/null || true
-  # Give KeepAlive a moment to spawn.
   for _ in 1 2 3 4 5 6 7 8 9 10; do
     if is_running; then
       echo "on"
@@ -74,6 +180,7 @@ cmd_on() {
   done
   echo "warning: LaunchDaemon loaded but keys-layer process not seen yet" >&2
   echo "check: tail -20 /var/log/keys-layer.log" >&2
+  echo "check Privacy: Accessibility + Input Monitoring for the keys-layer binary" >&2
   echo "on"
 }
 

@@ -14,12 +14,15 @@ brew install --HEAD sothearasao/keys-layer/keys-layer
 
 That puts **Keys Layer** in **/Applications**. Then:
 
-1. Grant **Accessibility** + **Input Monitoring** to  
-   `$(brew --prefix)/opt/keys-layer/bin/keys-layer`
-2. Open **Keys Layer** from Applications / Spotlight
-3. **Turn Remapping On** (password once — also creates config + LaunchDaemon if needed)
+1. Open **Keys Layer** from Applications / Spotlight  
+2. **Open Privacy Settings…** (or grant manually) for  
+   `$(brew --prefix)/opt/keys-layer/bin/keys-layer`  
+   — Accessibility **and** Input Monitoring (**not** the menu app)  
+3. **Turn Remapping On** (password once)
 
-You do **not** need to run `keys-layer-setup` for the normal path.
+First On creates config + LaunchDaemon. If Privacy was granted while remapping was already running, the app **restarts remapping automatically** (or use **Fix Privacy / Restart Remapping**).
+
+You do **not** need `keys-layer-setup` for the normal path.
 
 ### From source
 

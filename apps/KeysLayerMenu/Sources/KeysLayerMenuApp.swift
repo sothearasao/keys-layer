@@ -24,9 +24,13 @@ final class MenuModel: ObservableObject {
   @Published var isOn = false
   @Published var busy = false
   @Published var launchAtLogin = false
+  @Published var needsPrivacyFix = false
   @Published var lastError: String?
 
   private var timer: Timer?
+  private var didAutoRestartForPrivacy = false
+
+  var remapperPath: String { DaemonController.remapperBinaryPath() }
 
   init() {
     refresh()
@@ -41,6 +45,27 @@ final class MenuModel: ObservableObject {
   func refresh() {
     guard !busy else { return }
     isOn = DaemonController.statusOn()
+    if isOn {
+      let denied = DaemonController.currentSessionDeniedPrivacy()
+      needsPrivacyFix = denied
+      if denied {
+        lastError =
+          "Input Monitoring not active. Enable it for:\n\(remapperPath)\n(not Keys Layer.app), then remapping will restart automatically — or click Fix below."
+        // One automatic restart after privacy may have been granted while running.
+        if !didAutoRestartForPrivacy {
+          didAutoRestartForPrivacy = true
+          applyPrivacyRestart()
+        }
+      } else {
+        if needsPrivacyFix { needsPrivacyFix = false }
+        if lastError?.contains("Input Monitoring") == true {
+          lastError = nil
+        }
+      }
+    } else {
+      needsPrivacyFix = false
+      didAutoRestartForPrivacy = false
+    }
   }
 
   func refreshLaunchAtLogin() {
@@ -53,13 +78,22 @@ final class MenuModel: ObservableObject {
     guard !busy else { return }
     busy = true
     lastError = nil
+    needsPrivacyFix = false
+    if enabled {
+      didAutoRestartForPrivacy = false
+    }
     let target = enabled
     Task.detached {
       do {
         try DaemonController.setEnabled(target)
+        // Let the daemon log a session before we check Privacy.
+        if target {
+          try? await Task.sleep(nanoseconds: 1_800_000_000)
+        }
         await MainActor.run {
           self.isOn = DaemonController.statusOn()
           self.busy = false
+          self.refresh()
         }
       } catch {
         await MainActor.run {
@@ -69,6 +103,46 @@ final class MenuModel: ObservableObject {
         }
       }
     }
+  }
+
+  /// Off → On in one admin prompt path (two privileged calls; user may get 2 dialogs
+  /// unless cached). Prefer calling after Privacy is enabled.
+  func applyPrivacyRestart() {
+    guard !busy else { return }
+    busy = true
+    lastError = "Restarting remapping so Privacy applies…"
+    Task.detached {
+      do {
+        try DaemonController.setEnabled(false)
+        try DaemonController.setEnabled(true)
+        try? await Task.sleep(nanoseconds: 1_500_000_000)
+        await MainActor.run {
+          self.isOn = DaemonController.statusOn()
+          self.busy = false
+          let denied = DaemonController.currentSessionDeniedPrivacy()
+          self.needsPrivacyFix = denied
+          if denied {
+            self.lastError =
+              "Still blocked. In Privacy, enable Accessibility + Input Monitoring for:\n\(DaemonController.remapperBinaryPath())"
+            DaemonController.openPrivacyHelp()
+          } else {
+            self.lastError = nil
+          }
+        }
+      } catch {
+        await MainActor.run {
+          self.lastError = error.localizedDescription
+          self.isOn = DaemonController.statusOn()
+          self.busy = false
+        }
+      }
+    }
+  }
+
+  func openPrivacySettings() {
+    DaemonController.openPrivacyHelp()
+    lastError =
+      "Binary path copied. Enable Accessibility + Input Monitoring for that path, then click Fix Privacy / Restart."
   }
 
   func setLaunchAtLogin(_ enabled: Bool) {
@@ -96,7 +170,7 @@ final class MenuModel: ObservableObject {
     if FileManager.default.fileExists(atPath: cfg.path) {
       NSWorkspace.shared.open(cfg)
     } else {
-      lastError = "No config at \(cfg.path) — run keys-layer-setup first."
+      lastError = "No config yet — Turn Remapping On once to create it."
     }
   }
 
@@ -114,10 +188,10 @@ struct ContentView: View {
     } label: {
       HStack {
         Text("Turn Remapping On")
-        if model.isOn { Text("✓") }
+        if model.isOn && !model.needsPrivacyFix { Text("✓") }
       }
     }
-    .disabled(model.busy || model.isOn)
+    .disabled(model.busy || (model.isOn && !model.needsPrivacyFix))
 
     Button {
       model.setEnabled(false)
@@ -129,12 +203,24 @@ struct ContentView: View {
     }
     .disabled(model.busy || !model.isOn)
 
+    if model.needsPrivacyFix || model.isOn == false {
+      Divider()
+      Button("Open Privacy Settings…") { model.openPrivacySettings() }
+      if model.needsPrivacyFix {
+        Button("Fix Privacy / Restart Remapping") { model.applyPrivacyRestart() }
+          .disabled(model.busy)
+      }
+    }
+
     Divider()
 
-    Toggle("Launch Menu at Login", isOn: Binding(
-      get: { model.launchAtLogin },
-      set: { model.setLaunchAtLogin($0) }
-    ))
+    Toggle(
+      "Launch Menu at Login",
+      isOn: Binding(
+        get: { model.launchAtLogin },
+        set: { model.setLaunchAtLogin($0) }
+      )
+    )
 
     Divider()
 
@@ -146,7 +232,7 @@ struct ContentView: View {
       Text(err)
         .foregroundStyle(.secondary)
         .font(.caption)
-        .lineLimit(3)
+        .lineLimit(6)
     }
 
     Divider()

@@ -12,7 +12,21 @@ enum DaemonController {
     let output: String
   }
 
-  /// Resolve ctl next to the app, Homebrew prefix, or PATH.
+  /// Remapper binary Privacy must be granted for (not this menu app).
+  static func remapperBinaryPath() -> String {
+    if let env = ProcessInfo.processInfo.environment["KEYS_LAYER_BIN"], !env.isEmpty {
+      return env
+    }
+    for path in [
+      "/opt/homebrew/opt/keys-layer/bin/keys-layer",
+      "/usr/local/opt/keys-layer/bin/keys-layer",
+      "/usr/local/bin/keys-layer",
+    ] where FileManager.default.isExecutableFile(atPath: path) {
+      return path
+    }
+    return "/opt/homebrew/opt/keys-layer/bin/keys-layer"
+  }
+
   static func ctlPath() -> String {
     if let env = ProcessInfo.processInfo.environment["KEYS_LAYER_CTL"], !env.isEmpty {
       return env
@@ -21,8 +35,6 @@ enum DaemonController {
       .appendingPathComponent("Contents/MacOS", isDirectory: true)
     let candidates = [
       macOS.appendingPathComponent("keys-layer-ctl").path,
-      Bundle.main.bundleURL
-        .appendingPathComponent("Contents/MacOS/keys-layer-ctl").path,
       "/opt/homebrew/bin/keys-layer-ctl",
       "/usr/local/bin/keys-layer-ctl",
     ]
@@ -33,8 +45,26 @@ enum DaemonController {
   }
 
   static func statusOn() -> Bool {
-    let r = runUnprivileged(.status)
-    return r.exitCode == 0
+    runUnprivileged(.status).exitCode == 0
+  }
+
+  /// True if the latest remapper session logged Input Monitoring denial.
+  static func currentSessionDeniedPrivacy() -> Bool {
+    let log = "/var/log/keys-layer.log"
+    guard let data = try? Data(contentsOf: URL(fileURLWithPath: log)),
+          let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1)
+    else { return false }
+
+    // Only inspect lines after the last successful start banner.
+    let marker = "keys-layer (DriverKit) running"
+    let session: String
+    if let range = text.range(of: marker, options: .backwards) {
+      session = String(text[range.lowerBound...])
+    } else {
+      // Fall back to last 8 KiB
+      session = String(text.suffix(8192))
+    }
+    return session.contains("not permitted")
   }
 
   static func setEnabled(_ enabled: Bool) throws {
@@ -42,6 +72,25 @@ enum DaemonController {
     let r = try runPrivileged(action)
     if r.exitCode != 0 {
       throw ControllerError.commandFailed(action.rawValue, r.output)
+    }
+  }
+
+  /// Open Privacy panes and put the remapper path on the clipboard.
+  static func openPrivacyHelp() {
+    let path = remapperBinaryPath()
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(path, forType: .string)
+
+    let urls = [
+      "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent",
+      "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
+      "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension",
+    ]
+    for s in urls {
+      if let u = URL(string: s) {
+        NSWorkspace.shared.open(u)
+        break
+      }
     }
   }
 
@@ -63,7 +112,6 @@ enum DaemonController {
     return Result(exitCode: proc.terminationStatus, output: text)
   }
 
-  /// Password dialog via `do shell script … with administrator privileges`.
   private static func runPrivileged(_ action: Action) throws -> Result {
     let ctl = ctlPath()
     let shell = "\(shellEscape(ctl)) \(action.rawValue)"

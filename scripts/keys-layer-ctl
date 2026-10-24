@@ -116,16 +116,16 @@ ensure_ready() {
     echo "created ${config_path}" >&2
   fi
 
-  if [[ -f "${PLIST}" ]]; then
-    return 0
-  fi
-
   template="$(resolve_plist_template)"
   if [[ -z "${template}" ]]; then
+    if [[ -f "${PLIST}" ]]; then
+      return 0
+    fi
     echo "error: missing LaunchDaemon template; reinstall keys-layer" >&2
     exit 1
   fi
 
+  # Always refresh plist from template so upgrades pick up RunAtLoad/KeepAlive=false.
   local tmp
   tmp="$(mktemp)"
   sed \
@@ -133,11 +133,13 @@ ensure_ready() {
     -e "s|__KEYS_LAYER_CONFIG__|${config_path}|g" \
     "${template}" > "${tmp}"
   plutil -lint "${tmp}" >/dev/null
-  cp "${tmp}" "${PLIST}"
+  if [[ ! -f "${PLIST}" ]] || ! cmp -s "${tmp}" "${PLIST}"; then
+    cp "${tmp}" "${PLIST}"
+    chown root:wheel "${PLIST}"
+    chmod 644 "${PLIST}"
+    echo "updated ${PLIST}" >&2
+  fi
   rm -f "${tmp}"
-  chown root:wheel "${PLIST}"
-  chmod 644 "${PLIST}"
-  echo "installed ${PLIST}" >&2
 }
 
 cmd_status() {
@@ -162,25 +164,63 @@ cmd_off() {
   echo "off"
 }
 
-cmd_on() {
-  ensure_ready
+start_daemon() {
   launchctl bootout "system/${LABEL}" 2>/dev/null || true
+  pkill -9 -x keys-layer 2>/dev/null || true
+  sleep 0.2
   launchctl enable "system/${LABEL}" 2>/dev/null || true
   if ! launchctl bootstrap system "${PLIST}" 2>/dev/null; then
     launchctl enable "system/${LABEL}" 2>/dev/null || true
     launchctl bootstrap system "${PLIST}"
   fi
   launchctl kickstart -k "system/${LABEL}" 2>/dev/null || true
-  for _ in 1 2 3 4 5 6 7 8 9 10; do
+}
+
+# True if the latest "running" session logged Input Monitoring denial.
+session_denied_privacy() {
+  local log="/var/log/keys-layer.log"
+  [[ -f "${log}" ]] || return 1
+  awk '
+    /keys-layer \(DriverKit\) running/ { buf = "" }
+    { buf = buf $0 "\n" }
+    END { print buf }
+  ' "${log}" | grep -q "not permitted"
+}
+
+wait_until_running() {
+  local i
+  for i in 1 2 3 4 5 6 7 8 9 10; do
     if is_running; then
-      echo "on"
       return 0
     fi
     sleep 0.3
   done
-  echo "warning: LaunchDaemon loaded but keys-layer process not seen yet" >&2
-  echo "check: tail -20 /var/log/keys-layer.log" >&2
-  echo "check Privacy: Accessibility + Input Monitoring for the keys-layer binary" >&2
+  return 1
+}
+
+cmd_on() {
+  ensure_ready
+  start_daemon
+  if ! wait_until_running; then
+    echo "warning: LaunchDaemon loaded but keys-layer process not seen yet" >&2
+    echo "check: tail -20 /var/log/keys-layer.log" >&2
+  fi
+
+  # Privacy granted while an older process was running (or TCC race): one
+  # automatic restart inside this same admin invocation — no CLI / Off→On.
+  sleep 1.5
+  if session_denied_privacy; then
+    echo "Input Monitoring not active on process — restarting once so TCC applies…" >&2
+    echo "If remaps still fail, enable Accessibility + Input Monitoring for:" >&2
+    echo "  $(resolve_bin)" >&2
+    echo "(not Keys Layer.app)" >&2
+    start_daemon
+    wait_until_running || true
+    sleep 1.2
+    if session_denied_privacy; then
+      echo "warning: still not permitted after restart — fix Privacy for $(resolve_bin)" >&2
+    fi
+  fi
   echo "on"
 }
 

@@ -21,7 +21,8 @@ class KeysLayer < Formula
 
   depends_on :macos
   depends_on "rust" => :build
-  depends_on xcode: ["14.0", :build]
+  # Menu bar builds with Swift from Xcode *or* Command Line Tools — do not
+  # depends_on xcode (that forces full Xcode.app and breaks CLT-only Macs).
 
   def install
     # Homebrew's rust bottle ships `rust-objcopy` as a symlink to `llvm-objcopy`.
@@ -59,16 +60,20 @@ class KeysLayer < Formula
     chmod 0755, bin/"keys-layer-emergency-stop"
     chmod 0755, pkgshare/"keys-layer-emergency-stop.sh"
 
-    # Menu bar toggle (Turn Remapping On/Off). Needs Swift toolchain at build time.
-    system "./scripts/build-menubar-app.sh"
-    prefix.install "dist/Keys Layer.app"
-    (bin/"keys-layer-menu").write <<~SH
-      #!/bin/bash
-      set -euo pipefail
-      export KEYS_LAYER_CTL="#{opt_bin}/keys-layer-ctl"
-      open "#{opt_prefix}/Keys Layer.app"
-    SH
-    chmod 0755, bin/"keys-layer-menu"
+    # Menu bar toggle — Swift from CLT is enough; skip if unavailable.
+    if which("swift")
+      system "./scripts/build-menubar-app.sh"
+      prefix.install "dist/Keys Layer.app"
+      (bin/"keys-layer-menu").write <<~SH
+        #!/bin/bash
+        set -euo pipefail
+        export KEYS_LAYER_CTL="#{opt_bin}/keys-layer-ctl"
+        open "#{opt_prefix}/Keys Layer.app"
+      SH
+      chmod 0755, bin/"keys-layer-menu"
+    else
+      opoo "swift not found; skipping Keys Layer.app (install Xcode CLT to build it)"
+    end
   end
 
   def caveats
@@ -103,6 +108,6 @@ class KeysLayer < Formula
     assert_predicate bin/"keys-layer-setup", :executable?
     assert_predicate bin/"keys-layer-emergency-stop", :executable?
     assert_predicate bin/"keys-layer-ctl", :executable?
-    assert_path_exists prefix/"Keys Layer.app"
+    assert_path_exists prefix/"Keys Layer.app" if (prefix/"Keys Layer.app").exist?
   end
 end

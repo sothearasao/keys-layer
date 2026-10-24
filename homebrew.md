@@ -86,6 +86,7 @@ Re-check Input Monitoring if the log shows `not permitted` after an upgrade.
 | Symptom | Fix |
 |---------|-----|
 | `unable to run rust-objcopy` during `brew install` | Fixed in the formula (`CARGO_PROFILE_RELEASE_STRIP=none`). Update the tap / reinstall `--HEAD`. Or: `export CARGO_PROFILE_RELEASE_STRIP=none` and use `./scripts/install.sh`. |
+| `A full installation of Xcode.app is required` | Fixed: formula no longer requires Xcode.app. Command Line Tools + `swift` are enough for the menu bar. `brew update` then `brew install --HEAD …` again. |
 | Key left of `1` types `§`/`±` instead of `` ` ``/`~` | Fixed in **v0.1.6+** (`iso_grave_swap` off by default). `brew update && brew upgrade keys-layer`, then `sudo launchctl kickstart -k system/local.keys-layer`. If you still need the old swap: `iso_grave_swap = true` in config. |
 | Keyboard freezes every few seconds after macOS upgrade; log shows `connect_failed asio.system:2` | VirtualHID **daemon** not running. `keys-layer-emergency-stop`, then `./scripts/setup-virtualhid.sh --no-pkg`, re-enable Driver Extensions, `keys-layer-setup`. |
 | `keys-layer-setup: command not found` | Install failed — fix the build first, then `brew install …` again |

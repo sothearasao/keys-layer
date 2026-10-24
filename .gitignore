@@ -11,6 +11,7 @@ target/
 # Build / installer output
 dist/
 apps/KeysLayerMenu/.build/
+apps/KeysLayerMenu/.build-homebrew/
 
 # cargo mutants
 **/mutants.out*/

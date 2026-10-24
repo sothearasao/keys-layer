@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # Build Keys Layer.app (menu bar toggle) into dist/ or DEST.
 #
+# Uses `swiftc` directly (not SwiftPM) so Homebrew's build sandbox works.
+# SwiftPM nests sandbox-exec and fails with: sandbox_apply: Operation not permitted
+#
 #   ./scripts/build-menubar-app.sh
-#   DEST=/opt/homebrew/opt/keys-layer ./scripts/build-menubar-app.sh
+#   DEST=/tmp/out ./scripts/build-menubar-app.sh
 
 set -euo pipefail
 
@@ -11,22 +14,44 @@ PKG="${ROOT}/apps/KeysLayerMenu"
 DEST="${DEST:-${ROOT}/dist}"
 APP_NAME="Keys Layer.app"
 APP="${DEST}/${APP_NAME}"
+BUILD_DIR="${PKG}/.build-homebrew"
+BIN="${BUILD_DIR}/KeysLayerMenu"
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "error: macOS only" >&2
   exit 1
 fi
 
-if ! command -v swift >/dev/null 2>&1; then
-  echo "error: swift not found (install Xcode CLT)" >&2
+if ! command -v swiftc >/dev/null 2>&1; then
+  echo "error: swiftc not found (install Xcode Command Line Tools)" >&2
   exit 1
 fi
 
-echo "==> building KeysLayerMenu"
-cd "${PKG}"
-swift build -c release --product KeysLayerMenu
+ARCH="$(uname -m)"
+# MenuBarExtra needs macOS 13+.
+TARGET="${ARCH}-apple-macosx13.0"
 
-BIN="$(swift build -c release --show-bin-path)/KeysLayerMenu"
+SOURCES=(
+  "${PKG}/Sources/DaemonController.swift"
+  "${PKG}/Sources/KeysLayerMenuApp.swift"
+)
+
+echo "==> building KeysLayerMenu (swiftc, target ${TARGET})"
+rm -rf "${BUILD_DIR}"
+mkdir -p "${BUILD_DIR}"
+
+# Avoid SPM: Homebrew sandbox + SwiftPM nested sandbox_exec fails.
+swiftc -O \
+  -parse-as-library \
+  -target "${TARGET}" \
+  -sdk "$(xcrun --show-sdk-path)" \
+  "${SOURCES[@]}" \
+  -o "${BIN}" \
+  -framework SwiftUI \
+  -framework AppKit \
+  -framework ServiceManagement \
+  -framework Foundation
+
 if [[ ! -x "${BIN}" ]]; then
   echo "error: missing binary ${BIN}" >&2
   exit 1
@@ -40,7 +65,6 @@ cp "${ROOT}/scripts/keys-layer-ctl" "${APP}/Contents/MacOS/keys-layer-ctl"
 cp "${PKG}/Info.plist" "${APP}/Contents/Info.plist"
 chmod 755 "${APP}/Contents/MacOS/KeysLayerMenu" "${APP}/Contents/MacOS/keys-layer-ctl"
 
-# Ad-hoc sign so Gatekeeper is less noisy for local/Homebrew builds.
 if command -v codesign >/dev/null 2>&1; then
   codesign --force --deep --sign - "${APP}" 2>/dev/null || true
 fi

@@ -41,7 +41,18 @@ class KeysLayer < Formula
         #!/bin/bash
         set -euo pipefail
         export KEYS_LAYER_CTL="#{opt_bin}/keys-layer-ctl"
-        open "/Applications/Keys Layer.app" 2>/dev/null || open "#{opt_prefix}/Keys Layer.app"
+        SRC="#{opt_prefix}/Keys Layer.app"
+        DEST="/Applications/Keys Layer.app"
+        if [[ -d "${SRC}" ]]; then
+          if [[ ! -d "${DEST}" ]] || [[ "${SRC}/Contents/Info.plist" -nt "${DEST}/Contents/Info.plist" ]]; then
+            rm -rf "${DEST}"
+            cp -R "${SRC}" "${DEST}"
+          fi
+          open "${DEST}"
+        else
+          echo "error: Keys Layer.app not found at ${SRC}" >&2
+          exit 1
+        fi
       SH
       chmod 0755, bin/"keys-layer-menu"
     else
@@ -90,12 +101,16 @@ class KeysLayer < Formula
     app_src = prefix/"Keys Layer.app"
     return unless app_src.directory?
 
-    apps = Pathname.new("/Applications")
-    dest = apps/"Keys Layer.app"
-    # Install like a normal Mac app for Spotlight / Launchpad.
-    system "rm", "-rf", dest.to_s if dest.exist?
-    system "cp", "-R", app_src.to_s, dest.to_s
-    ohai "Installed Keys Layer.app → #{dest}"
+    # Prefer /Applications; brew post_install often cannot write there — fall back
+    # is opt_prefix (keys-layer-menu copies into /Applications on first open).
+    dest = Pathname.new("/Applications/Keys Layer.app")
+    begin
+      FileUtils.rm_rf(dest) if dest.exist?
+      FileUtils.cp_r(app_src, dest)
+      ohai "Installed Keys Layer.app → #{dest}"
+    rescue StandardError => e
+      opoo "Could not copy to /Applications (#{e.message}). Run: keys-layer-menu"
+    end
   end
 
   def caveats
@@ -109,7 +124,8 @@ class KeysLayer < Formula
 
       Simple use:
         1. Grant Accessibility + Input Monitoring to the binary above
-        2. Open "Keys Layer" from /Applications (or: keys-layer-menu)
+        2. keys-layer-menu
+           (copies Keys Layer.app into /Applications if needed, then opens it)
         3. Menu bar → Turn Remapping On  (admin password once;
            creates config + LaunchDaemon on first On)
         Remapping does NOT start at login — only when you turn it on.

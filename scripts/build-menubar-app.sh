@@ -61,9 +61,18 @@ echo "==> assembling ${APP}"
 rm -rf "${APP}"
 mkdir -p "${APP}/Contents/MacOS" "${APP}/Contents/Resources"
 cp "${BIN}" "${APP}/Contents/MacOS/KeysLayerMenu"
-cp "${ROOT}/scripts/keys-layer-ctl" "${APP}/Contents/MacOS/keys-layer-ctl"
 cp "${PKG}/Info.plist" "${APP}/Contents/Info.plist"
-chmod 755 "${APP}/Contents/MacOS/KeysLayerMenu" "${APP}/Contents/MacOS/keys-layer-ctl"
+chmod 755 "${APP}/Contents/MacOS/KeysLayerMenu"
+
+CTL_SRC="${KEYS_LAYER_CTL_SRC:-${ROOT}/scripts/keys-layer-ctl}"
+if [[ -f "${CTL_SRC}" ]]; then
+  cp "${CTL_SRC}" "${APP}/Contents/MacOS/keys-layer-ctl"
+  chmod 755 "${APP}/Contents/MacOS/keys-layer-ctl"
+else
+  echo "error: keys-layer-ctl not found at ${CTL_SRC}" >&2
+  echo "    (Homebrew must build the app before pkgshare.install moves scripts/)" >&2
+  exit 1
+fi
 
 if command -v codesign >/dev/null 2>&1; then
   codesign --force --deep --sign - "${APP}" 2>/dev/null || true

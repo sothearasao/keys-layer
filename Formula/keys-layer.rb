@@ -32,6 +32,22 @@ class KeysLayer < Formula
 
     system "cargo", "install", *std_cargo_args(path: "crates/keys-layer")
 
+    # Build the menu bar BEFORE pkgshare.install — Homebrew moves installed
+    # sources out of the buildpath, which broke embedding keys-layer-ctl.
+    if which("swift")
+      system "./scripts/build-menubar-app.sh"
+      prefix.install "dist/Keys Layer.app"
+      (bin/"keys-layer-menu").write <<~SH
+        #!/bin/bash
+        set -euo pipefail
+        export KEYS_LAYER_CTL="#{opt_bin}/keys-layer-ctl"
+        open "/Applications/Keys Layer.app" 2>/dev/null || open "#{opt_prefix}/Keys Layer.app"
+      SH
+      chmod 0755, bin/"keys-layer-menu"
+    else
+      opoo "swift not found; skipping Keys Layer.app (install Xcode CLT to build it)"
+    end
+
     (pkgshare/"examples").install "config.example.toml"
     pkgshare.install "packaging/local.keys-layer.plist.in"
     pkgshare.install "scripts/keys-layer-setup"
@@ -68,21 +84,6 @@ class KeysLayer < Formula
     SH
     chmod 0755, bin/"keys-layer-emergency-stop"
     chmod 0755, pkgshare/"keys-layer-emergency-stop.sh"
-
-    # Menu bar toggle — Swift from CLT is enough; skip if unavailable.
-    if which("swift")
-      system "./scripts/build-menubar-app.sh"
-      prefix.install "dist/Keys Layer.app"
-      (bin/"keys-layer-menu").write <<~SH
-        #!/bin/bash
-        set -euo pipefail
-        export KEYS_LAYER_CTL="#{opt_bin}/keys-layer-ctl"
-        open "/Applications/Keys Layer.app" 2>/dev/null || open "#{opt_prefix}/Keys Layer.app"
-      SH
-      chmod 0755, bin/"keys-layer-menu"
-    else
-      opoo "swift not found; skipping Keys Layer.app (install Xcode CLT to build it)"
-    end
   end
 
   def post_install

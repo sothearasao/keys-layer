@@ -243,11 +243,22 @@ pub fn run(config_path: &Path) -> Result<(), String> {
                     _ => "sink-loss",
                 };
                 if let Err(err) = recover_input_after_release(ctx) {
-                    return Err(err);
+                    // Never exit on wake/hotplug flaps — KeepAlive=false would leave
+                    // remapping permanently off until the menu Turn On again.
+                    eprintln!("{err} — retrying (keyboards stay released until VirtualHID is stable)");
+                    thread::sleep(Duration::from_secs(5));
+                    SINK_RECOVER.store(true, Ordering::SeqCst);
                 }
                 continue;
             }
-            return Err("input pipe closed (devices released)".into());
+            // Unexpected pipe close with no recover flag — ask for another sink recover
+            // instead of dying (common when release raced the watchdog).
+            eprintln!(
+                "input pipe closed unexpectedly — treating as sink-loss and retrying"
+            );
+            SINK_RECOVER.store(true, Ordering::SeqCst);
+            thread::sleep(Duration::from_secs(1));
+            continue;
         }
 
         if SINK_RECOVER.load(Ordering::SeqCst) || !is_sink_ready() {
@@ -365,15 +376,16 @@ fn release_for_recovery(reason: &str) {
 /// After `release_input_only`, wait for the sink and reseize registered devices.
 ///
 /// Safety: if VirtualHID flaps (common after sleep), we **stay released** for a
-/// cooldown instead of reseizing into a half-dead sink (that bricks the keyboard
-/// until the process is killed).
+/// cooldown instead of reseizing into a half-dead sink (that bricks the keyboard).
+/// Callers must retry on `Err` — do not exit the process (that turns remapping off).
 fn recover_input_after_release(context: &str) -> Result<(), String> {
     let streak = RECOVER_STREAK.fetch_add(1, Ordering::SeqCst) + 1;
     if streak > 3 {
-        let cooldown = Duration::from_secs(5 * 60);
+        // Short cooldown — long 5‑minute sleeps felt like "turned off after wake".
+        let cooldown = Duration::from_secs(15);
         eprintln!(
             "{context}: {streak} recoveries in a row — keeping keyboards RELEASED \
-             for {}s so the Mac stays usable. Remaps pause; will retry after cooldown.",
+             for {}s so the Mac stays usable, then retrying.",
             cooldown.as_secs()
         );
         thread::sleep(cooldown);
@@ -383,23 +395,19 @@ fn recover_input_after_release(context: &str) -> Result<(), String> {
     eprintln!("{context}: waiting for VirtualHID sink (common after sleep/wake)…");
     if !wait_for_sink(Duration::from_secs(120)) {
         return Err(format!(
-            "{context}: virtual keyboard sink did not recover within 120s.\n\
-             Released keyboards so OS input works; LaunchDaemon will retry."
+            "{context}: virtual keyboard sink did not recover within 120s"
         ));
     }
-    // Settle after lid open / dext restart.
-    thread::sleep(Duration::from_secs(2));
-    if !is_sink_ready() {
+    // After wake the sink often flickers ready→false; poll instead of a single check.
+    eprintln!("{context}: sink seen — waiting for it to stay ready…");
+    if !wait_for_sink_stable(Duration::from_secs(45), Duration::from_secs(2)) {
         eprintln!("{context}: sink not stable after settle — staying released");
         return Err(format!(
             "{context}: sink unstable after wake; left keyboards released"
         ));
     }
     if !regrab_input() {
-        return Err(format!(
-            "{context}: regrab failed after sink recovery — restart keys-layer \
-             (sudo launchctl kickstart -k system/local.keys-layer)"
-        ));
+        return Err(format!("{context}: regrab failed after sink recovery"));
     }
     // Verify sink still up right after grab; if not, release again immediately.
     thread::sleep(Duration::from_millis(500));
@@ -416,6 +424,24 @@ fn recover_input_after_release(context: &str) -> Result<(), String> {
     RECOVER_STREAK.store(0, Ordering::SeqCst);
     eprintln!("{context}: reseized keyboards — remapping active again");
     Ok(())
+}
+
+/// Wait until `is_sink_ready()` has been continuously true for `stable_for`.
+fn wait_for_sink_stable(timeout: Duration, stable_for: Duration) -> bool {
+    let start = Instant::now();
+    let mut ready_since: Option<Instant> = None;
+    while start.elapsed() < timeout {
+        if is_sink_ready() {
+            let since = ready_since.get_or_insert_with(Instant::now);
+            if since.elapsed() >= stable_for {
+                return true;
+            }
+        } else {
+            ready_since = None;
+        }
+        thread::sleep(Duration::from_millis(200));
+    }
+    false
 }
 
 /// Poll VirtualHID + wall-clock jumps (sleep/wake). Prefer releasing early over

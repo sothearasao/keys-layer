@@ -1,6 +1,6 @@
 # Menu bar toggle (macOS)
 
-Remapping is **off by default**. Use **Keys Layer.app** in `/Applications` to turn it on or off. It does **not** start at login.
+Remapping is **off by default** (does not start at login/reboot). Use **Keys Layer.app** in `/Applications` to turn it on or off. While On, it **stays on across sleep/wake** (recovery retries; LaunchDaemon KeepAlive restarts if the process exits).
 
 Related: [homebrew](./homebrew.md) · [installation](./installation.md) · [prerequisite](./prerequisite.md)
 

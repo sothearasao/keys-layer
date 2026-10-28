@@ -64,6 +64,7 @@ Re-check Input Monitoring if the log shows `not permitted` after an upgrade.
 | `sandbox-exec: sandbox_apply: Operation not permitted` while building menu bar | Fixed: menu bar builds with `swiftc` (no SwiftPM). `brew update` then `brew install --HEAD …` again. |
 | Key left of `1` types `§`/`±` instead of `` ` ``/`~` | Fixed in **v0.1.6+** (`iso_grave_swap` off by default). `brew update && brew upgrade keys-layer`, then toggle Off/On. If you still need the old swap: `iso_grave_swap = true` in config. |
 | Keyboard freezes every few seconds after macOS upgrade; log shows `connect_failed asio.system:2` | VirtualHID **daemon** not running. `keys-layer-emergency-stop`, then `./scripts/setup-virtualhid.sh --no-pkg`, re-enable Driver Extensions, Turn Remapping On. |
+| Remapping turns off after sleep/wake | Fixed in current `main`: recovery retries instead of exiting; plist `KeepAlive=true` while On. `brew upgrade --fetch-HEAD keys-layer`, then Turn Remapping Off/On once to refresh the plist. |
 | `keys-layer-setup: command not found` | Install failed — fix the build first, then `brew install …` again |
 | Cursor stuck / keyboard dies with BT mouse | Set `devices = ["Apple Internal"]` (see [configuration.md](./configuration.md#listing-devices)); upgrade past the seize filter fix |
 | Keyboard dead after sleep / remapper wedged | **Emergency (mouse OK):** `keys-layer-emergency-stop` or menu **Turn Remapping Off**. |

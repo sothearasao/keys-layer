@@ -39,7 +39,7 @@ open "/Applications/Keys Layer.app"
 |------|--------|
 | **Turn Remapping On** | Starts remapping (admin once; first time seeds config + plist) |
 | **Turn Remapping Off** | Stops remapping |
-| **Keyboards** | Lists connected boards (MacBook + externals). Toggle to enable/disable remapping per keyboard. Uses **Refresh Keyboards…** (admin) to load the list; also refreshes after Turn On. |
+| **Keyboards** | Lists connected boards (MacBook + externals). Click **Refresh Keyboards…** (admin password) to load, then toggle each board. Also refreshes automatically after **Turn Remapping On**. |
 | **Launch Menu at Login** | Menu icon at login only — remaps stay off until you turn them on |
 | **Open Config** / **Open Log** | `~/.config/keys-layer/config.toml` / `/var/log/keys-layer.log` |
 

@@ -50,8 +50,10 @@ sudo keys-layer-ctl devices
 
 ```bash
 brew upgrade --fetch-HEAD keys-layer
-# App in /Applications is refreshed on install/upgrade via post_install
+keys-layer-menu   # always refresh /Applications copy, then reopen
 ```
+
+Homebrew often cannot overwrite `/Applications` during `post_install`, so an old menu bar binary can stick around after upgrade. `keys-layer-menu` force-copies the new app.
 
 Re-check Input Monitoring if the log shows `not permitted` after an upgrade.
 

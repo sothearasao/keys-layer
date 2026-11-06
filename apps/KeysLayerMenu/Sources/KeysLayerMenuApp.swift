@@ -277,26 +277,28 @@ struct ContentView: View {
 
     Divider()
 
-    Text("Keyboards")
-      .font(.caption)
-      .foregroundStyle(.secondary)
+    // Section title as a disabled button — plain Text() is easy to miss in .menu style.
+    Button("Keyboards") {}
+      .disabled(true)
 
     if model.keyboards.isEmpty {
-      Button(model.busy ? "Loading keyboards…" : "Refresh Keyboards…") {
+      Button(model.busy ? "Loading keyboards…" : "Load Connected Keyboards…") {
         model.refreshKeyboards()
       }
       .disabled(model.busy)
     } else {
       ForEach(model.keyboards) { kb in
-        Toggle(isOn: Binding(
-          get: { kb.enabled },
-          set: { model.setKeyboardEnabled(kb, enabled: $0) }
-        )) {
-          Text(MenuModel.shortLabel(for: kb.name))
+        Button {
+          model.setKeyboardEnabled(kb, enabled: !kb.enabled)
+        } label: {
+          HStack {
+            Text(MenuModel.shortLabel(for: kb.name))
+            if kb.enabled { Text("✓") }
+          }
         }
         .disabled(model.busy)
       }
-      Button("Refresh Keyboards…") { model.refreshKeyboards() }
+      Button("Reload Keyboards…") { model.refreshKeyboards() }
         .disabled(model.busy)
     }
 

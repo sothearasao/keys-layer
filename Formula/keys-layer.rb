@@ -44,10 +44,11 @@ class KeysLayer < Formula
         SRC="#{opt_prefix}/Keys Layer.app"
         DEST="/Applications/Keys Layer.app"
         if [[ -d "${SRC}" ]]; then
-          if [[ ! -d "${DEST}" ]] || [[ "${SRC}/Contents/Info.plist" -nt "${DEST}/Contents/Info.plist" ]]; then
-            rm -rf "${DEST}"
-            cp -R "${SRC}" "${DEST}"
-          fi
+          # Always refresh /Applications — brew post_install often cannot write
+          # there, so an old copy would otherwise stick around forever.
+          pkill -x KeysLayerMenu 2>/dev/null || true
+          rm -rf "${DEST}"
+          cp -R "${SRC}" "${DEST}"
           open "${DEST}"
         else
           echo "error: Keys Layer.app not found at ${SRC}" >&2
@@ -125,10 +126,14 @@ class KeysLayer < Formula
       Simple use:
         1. Grant Accessibility + Input Monitoring to the binary above
         2. keys-layer-menu
-           (copies Keys Layer.app into /Applications if needed, then opens it)
+           (always refreshes /Applications/Keys Layer.app, then opens it)
         3. Menu bar → Turn Remapping On  (admin password once;
            creates config + LaunchDaemon on first On)
+        4. Menu → Refresh Keyboards… → toggle MacBook / external boards
         Remapping does NOT start at login — only when you turn it on.
+
+      After brew upgrade, re-run: keys-layer-menu
+      (Homebrew often cannot overwrite /Applications by itself.)
 
       Emergency stop: keys-layer-emergency-stop
       Uninstall app copy: rm -rf "/Applications/Keys Layer.app"

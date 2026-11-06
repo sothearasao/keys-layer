@@ -65,6 +65,7 @@ Hold a key past `hold_ms` → enter another layer (momentary). Release → retur
 hold_ms = 200
 base_layer = "base"
 devices = ["Apple Internal"]         # allowlist (see Listing devices); add more boards as needed
+# disabled_devices = ["Apple Internal"]  # mute completely (seize + drop all keys)
 f_row_media_devices = ["Apple Internal"]  # Fn-aware F-row media (default)
 ```
 
@@ -73,6 +74,7 @@ f_row_media_devices = ["Apple Internal"]  # Fn-aware F-row media (default)
 | `hold_ms` | integer (ms) | `200` | Global hold delay when a layer/key does not set its own |
 | `base_layer` | string | `"base"` | Layer active when the program starts (must exist) |
 | `devices` | string array | `[]` (all keyboards) | Product-name substrings to seize. **macOS: strongly prefer an allowlist** (e.g. `["Apple Internal"]`) — empty seizes every keyboard-class HID device; many Bluetooth mice expose one and seizing them freezes the cursor. Pointer-like names are skipped automatically, but an allowlist is safer. See [Listing devices](#listing-devices). |
+| `disabled_devices` | string array | `[]` | Product-name substrings to **mute completely** (seized, but every key is dropped — nothing reaches macOS). Used by the menu bar keyboard toggles. Takes precedence over remapping for matching boards. |
 | `f_row_media_devices` | string array | `["Apple Internal"]` | Product-name substrings that get F1–F12 ↔ media. **macOS:** Fn/Globe + System Settings. **Linux:** media by default; hold `KEY_FN` for real F-keys when the board sends it. F3/F4 stay F-keys. Set `[]` to disable. |
 | `iso_grave_swap` | bool | `false` | **macOS only.** Swap HID grave ↔ `non_us_backslash` when emitting through VirtualHID. Leave off unless that key types `§`/`±` and enabling this restores `` ` ``/`~`. |
 

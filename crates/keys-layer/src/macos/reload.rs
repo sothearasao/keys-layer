@@ -3,6 +3,7 @@
 //! On success → `Engine::reload` and update runtime settings.
 //! On failure → log a clear error and keep the previous config.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -21,9 +22,11 @@ extern "C" fn on_sighup(_: libc::c_int) {
 }
 
 pub struct ReloadHandles {
-    pub f_row_media_hashes: Arc<Mutex<std::collections::HashSet<u64>>>,
+    pub f_row_media_hashes: Arc<Mutex<HashSet<u64>>>,
     pub f_row_media_devices: Arc<Mutex<Vec<String>>>,
     pub devices: Arc<Mutex<Vec<String>>>,
+    pub disabled_devices: Arc<Mutex<Vec<String>>>,
+    pub disabled_hashes: Arc<Mutex<HashSet<u64>>>,
 }
 
 /// Install SIGHUP handler and spawn a watcher that reloads on file change or signal.
@@ -98,14 +101,20 @@ fn try_reload(
     };
 
     let new_devices = config.settings.devices.clone();
+    let new_disabled = config.settings.disabled_devices.clone();
     let new_media_patterns = config.settings.f_row_media_devices.clone();
     let iso_grave_swap = config.settings.iso_grave_swap;
     let new_media = device_hashes_matching(&new_media_patterns);
+    let new_disabled_hashes = device_hashes_matching(&new_disabled);
     let suppress_caps = config.is_native_disabled(&KeyName::new("caps_lock"));
 
     let devices_changed = {
         let old = handles.devices.lock().expect("devices lock");
         *old != new_devices
+    };
+    let disabled_changed = {
+        let old = handles.disabled_devices.lock().expect("disabled lock");
+        *old != new_disabled
     };
 
     let releases = {
@@ -118,12 +127,17 @@ fn try_reload(
     *handles.f_row_media_hashes.lock().expect("media lock") = new_media;
     *handles.f_row_media_devices.lock().expect("media devices") = new_media_patterns;
     *handles.devices.lock().expect("devices lock") = new_devices;
+    *handles.disabled_devices.lock().expect("disabled devices") = new_disabled;
+    *handles.disabled_hashes.lock().expect("disabled hashes") = new_disabled_hashes;
 
     if suppress_caps {
         caps_lock::force_caps_lock_off();
     }
 
     eprintln!("config reloaded OK — {}", config_path.display());
+    if disabled_changed {
+        eprintln!("note: settings.disabled_devices updated — muted boards drop all keys");
+    }
     if devices_changed {
         eprintln!(
             "note: settings.devices changed — newly matching keyboards will be \

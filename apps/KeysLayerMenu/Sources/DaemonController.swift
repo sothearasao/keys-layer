@@ -4,6 +4,7 @@ import Foundation
 struct KeyboardItem: Identifiable, Equatable {
   var id: String { name }
   let name: String
+  /// `true` = keyboard produces input (remapped). `false` = muted completely.
   var enabled: Bool
 }
 
@@ -79,7 +80,7 @@ enum DaemonController {
     }
   }
 
-  /// Connected keyboards with allowlist on/off (requires admin + VirtualHID).
+  /// Connected keyboards: on = live input, off = muted (requires admin + VirtualHID).
   static func listKeyboards() throws -> [KeyboardItem] {
     let r = try runPrivileged(Action.devices.rawValue)
     if r.exitCode != 0 {
@@ -104,28 +105,27 @@ enum DaemonController {
     }
   }
 
-  /// Immediate list from config + cache — no password. Toggles show even before a live scan.
+  /// Immediate list from config + cache — no password.
   static func keyboardsFromConfigAndCache() -> [KeyboardItem] {
-    let patterns = readDevicePatterns()
+    let remap = readStringArray(key: "devices")
+    let muted = readStringArray(key: "disabled_devices")
     var names = rememberedNames()
-    for p in patterns where !names.contains(where: { $0.caseInsensitiveCompare(p) == .orderedSame }) {
+    for p in remap where !names.contains(where: { $0.caseInsensitiveCompare(p) == .orderedSame }) {
+      names.append(displayName(forPattern: p))
+    }
+    for p in muted where !names.contains(where: { $0.localizedCaseInsensitiveContains(p) || p.localizedCaseInsensitiveContains($0) }) {
       names.append(displayName(forPattern: p))
     }
     if names.isEmpty {
       names = ["Apple Internal Keyboard / Trackpad"]
     }
 
-    if patterns.isEmpty {
-      // Empty allowlist ⇒ every keyboard remapped.
-      return names.map { KeyboardItem(name: $0, enabled: true) }
-    }
-
     return names.map { name in
-      let enabled = patterns.contains { pattern in
+      let isMuted = muted.contains { pattern in
         name.range(of: pattern, options: [.caseInsensitive, .diacriticInsensitive]) != nil
           || pattern.range(of: name, options: [.caseInsensitive, .diacriticInsensitive]) != nil
       }
-      return KeyboardItem(name: name, enabled: enabled)
+      return KeyboardItem(name: name, enabled: !isMuted)
     }
     .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
   }
@@ -153,10 +153,11 @@ enum DaemonController {
       .appendingPathComponent(".config/keys-layer/config.toml")
   }
 
-  private static func readDevicePatterns() -> [String] {
+  private static func readStringArray(key: String) -> [String] {
     guard let text = try? String(contentsOf: configURL(), encoding: .utf8) else { return [] }
+    let pattern = #"\#(NSRegularExpression.escapedPattern(for: key))\s*=\s*\[(.*?)\]"#
     guard let regex = try? NSRegularExpression(
-      pattern: #"devices\s*=\s*\[(.*?)\]"#,
+      pattern: pattern,
       options: [.dotMatchesLineSeparators]
     ) else { return [] }
     let range = NSRange(text.startIndex..<text.endIndex, in: text)

@@ -136,17 +136,26 @@ pub fn run(config_path: &Path) -> Result<(), String> {
 
     let config = load_config(config_path).map_err(|e| e.to_string())?;
     let device_patterns = config.settings.devices.clone();
+    let disabled_patterns = config.settings.disabled_devices.clone();
     let f_row_media_hashes = Arc::new(Mutex::new(device_hashes_matching(
         &config.settings.f_row_media_devices,
     )));
+    let disabled_hashes = Arc::new(Mutex::new(device_hashes_matching(&disabled_patterns)));
     {
         let n = f_row_media_hashes.lock().expect("media lock").len();
         if n > 0 {
             eprintln!("F-row media (Fn/Globe) enabled for {n} device(s)");
         }
     }
+    {
+        let n = disabled_hashes.lock().expect("disabled lock").len();
+        if n > 0 {
+            eprintln!("muted keyboards (no input): {n} device(s)");
+        }
+    }
     set_iso_grave_swap(config.settings.iso_grave_swap);
     let devices = Arc::new(Mutex::new(device_patterns.clone()));
+    let disabled_devices = Arc::new(Mutex::new(disabled_patterns.clone()));
     let f_row_media_devices = Arc::new(Mutex::new(config.settings.f_row_media_devices.clone()));
     let suppress_native_caps = config.is_native_disabled(&KeyName::new("caps_lock"));
     let engine = Arc::new(Mutex::new(Engine::new(config)));
@@ -167,7 +176,8 @@ pub fn run(config_path: &Path) -> Result<(), String> {
         );
     }
 
-    let (seized, initial_hashes) = seize_devices(&device_patterns)?;
+    let seize_patterns = seize_pattern_list(&device_patterns, &disabled_patterns);
+    let (seized, initial_hashes) = seize_devices(&seize_patterns)?;
     eprintln!("seized keyboards: {}", seized.join(", "));
     let seized_hashes = Arc::new(Mutex::new(initial_hashes));
 
@@ -215,6 +225,8 @@ pub fn run(config_path: &Path) -> Result<(), String> {
     start_sink_watchdog();
     start_hotplug_watcher(
         Arc::clone(&devices),
+        Arc::clone(&disabled_devices),
+        Arc::clone(&disabled_hashes),
         Arc::clone(&f_row_media_devices),
         Arc::clone(&f_row_media_hashes),
         Arc::clone(&seized_hashes),
@@ -227,6 +239,8 @@ pub fn run(config_path: &Path) -> Result<(), String> {
             f_row_media_hashes: Arc::clone(&f_row_media_hashes),
             f_row_media_devices: Arc::clone(&f_row_media_devices),
             devices: Arc::clone(&devices),
+            disabled_devices: Arc::clone(&disabled_devices),
+            disabled_hashes: Arc::clone(&disabled_hashes),
         },
     );
 
@@ -288,6 +302,15 @@ pub fn run(config_path: &Path) -> Result<(), String> {
         // Never feed mouse axes into VirtualHID keyboard (drops motion while
         // the device stays seized — skipping here avoids log spam / bad emits).
         if is_pointer_motion(event.page, event.code) {
+            continue;
+        }
+
+        // settings.disabled_devices — seize the board but drop every event.
+        if disabled_hashes
+            .lock()
+            .expect("disabled lock")
+            .contains(&event.device_hash)
+        {
             continue;
         }
 
@@ -504,6 +527,25 @@ pub(super) fn device_hashes_matching(patterns: &[String]) -> HashSet<u64> {
         .collect()
 }
 
+/// Patterns to register with VirtualHID: remap allowlist ∪ muted boards.
+/// Empty remap list still means “all keyboards” (ignore disabled for the empty
+/// sentinel — muted boards are a subset of the full seize set).
+fn seize_pattern_list(devices: &[String], disabled: &[String]) -> Vec<String> {
+    if devices.is_empty() {
+        return Vec::new();
+    }
+    let mut out = devices.to_vec();
+    for d in disabled {
+        if !out
+            .iter()
+            .any(|p| p.eq_ignore_ascii_case(d) || d.to_lowercase().contains(&p.to_lowercase()))
+        {
+            out.push(d.clone());
+        }
+    }
+    out
+}
+
 fn is_virtual_hid_name(name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
     lower.contains("karabiner") || lower.contains("virtualhid")
@@ -642,6 +684,8 @@ fn seize_devices(patterns: &[String]) -> Result<(Vec<String>, HashSet<u64>), Str
 /// Watch for newly connected keyboards and reseize without restarting the process.
 fn start_hotplug_watcher(
     devices: Arc<Mutex<Vec<String>>>,
+    disabled_devices: Arc<Mutex<Vec<String>>>,
+    disabled_hashes: Arc<Mutex<HashSet<u64>>>,
     f_row_media_devices: Arc<Mutex<Vec<String>>>,
     f_row_media_hashes: Arc<Mutex<HashSet<u64>>>,
     seized_hashes: Arc<Mutex<HashSet<u64>>>,
@@ -650,8 +694,9 @@ fn start_hotplug_watcher(
         // Track by product name so hash churn / VirtualHID rebuilds do not loop.
         let mut known_names: HashSet<String> = {
             let matched = {
-                let patterns = devices.lock().expect("devices lock").clone();
-                matching_devices(&patterns)
+                let remap = devices.lock().expect("devices lock").clone();
+                let muted = disabled_devices.lock().expect("disabled lock").clone();
+                matching_devices(&seize_pattern_list(&remap, &muted))
             };
             matched.into_iter().map(|d| d.product_key).collect()
         };
@@ -659,8 +704,13 @@ fn start_hotplug_watcher(
         loop {
             thread::sleep(Duration::from_secs(2));
 
-            let patterns = devices.lock().expect("devices lock").clone();
+            let remap = devices.lock().expect("devices lock").clone();
+            let muted = disabled_devices.lock().expect("disabled lock").clone();
+            let patterns = seize_pattern_list(&remap, &muted);
             let matched = matching_devices(&patterns);
+
+            *disabled_hashes.lock().expect("disabled hashes") =
+                device_hashes_matching(&muted);
 
             let newcomers: Vec<(u64, String)> = matched
                 .iter()

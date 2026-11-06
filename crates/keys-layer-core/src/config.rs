@@ -35,6 +35,9 @@ pub struct Settings {
     pub base_layer: String,
     /// Product-name substrings of keyboards to seize. Empty = all keyboards.
     pub devices: Vec<String>,
+    /// Product-name substrings to seize and mute (no keys reach the OS).
+    /// Takes precedence over remapping for matching boards.
+    pub disabled_devices: Vec<String>,
     /// Product-name substrings that get Mac-style F1–F12 ↔ media (Fn/Globe).
     /// Default: `["Apple Internal"]`. Empty disables the feature.
     pub f_row_media_devices: Vec<String>,
@@ -114,6 +117,9 @@ struct RawSettings {
     /// Keyboards to seize (product-name substrings). Empty = all.
     #[serde(default)]
     devices: Vec<String>,
+    /// Keyboards to seize and mute completely (product-name substrings).
+    #[serde(default)]
+    disabled_devices: Vec<String>,
     /// Devices that get Fn-aware F-row media (default: Apple Internal).
     #[serde(default = "default_f_row_media_devices")]
     f_row_media_devices: Vec<String>,
@@ -128,6 +134,7 @@ impl Default for RawSettings {
             hold_ms: DEFAULT_HOLD_MS,
             base_layer: DEFAULT_BASE_LAYER.to_string(),
             devices: Vec::new(),
+            disabled_devices: Vec::new(),
             f_row_media_devices: default_f_row_media_devices(),
             iso_grave_swap: false,
         }
@@ -257,6 +264,7 @@ impl Config {
                 hold_ms: raw.settings.hold_ms,
                 base_layer: raw.settings.base_layer,
                 devices: raw.settings.devices,
+                disabled_devices: raw.settings.disabled_devices,
                 f_row_media_devices: raw.settings.f_row_media_devices,
                 iso_grave_swap: raw.settings.iso_grave_swap,
             },

@@ -7,6 +7,7 @@ hold_ms = 200
 # Linux: same filter; Windows ignores this (system-wide hook).
 devices = ["Apple Internal"]
 # devices = ["Apple Internal", "Moonlander"]
+# disabled_devices = ["Apple Internal"]  # mute completely (no keys reach the OS)
 # Mac-style F1–F12 ↔ media (macOS only; ignored on Linux).
 # Only these product-name substrings get it — other boards keep real F-keys.
 # F3/F4 stay as F-keys (no Mission Control / Spotlight via VirtualHID).

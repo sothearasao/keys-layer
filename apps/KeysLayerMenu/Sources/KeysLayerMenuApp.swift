@@ -15,7 +15,6 @@ struct KeysLayerMenuApp: App {
         systemImage: model.isOn ? "keyboard.fill" : "keyboard"
       )
     }
-    // Window style so keyboard toggles are always visible (plain .menu hid them).
     .menuBarExtraStyle(.window)
   }
 }
@@ -49,12 +48,8 @@ final class MenuModel: ObservableObject {
   func refresh() {
     guard !busy else { return }
     isOn = DaemonController.statusOn()
-    if !didLiveScan {
-      // Keep toggles visible from config while idle.
-      let seeded = DaemonController.keyboardsFromConfigAndCache()
-      if keyboards.isEmpty {
-        keyboards = seeded
-      }
+    if keyboards.isEmpty {
+      keyboards = DaemonController.keyboardsFromConfigAndCache()
     }
     if isOn {
       let denied = DaemonController.currentSessionDeniedPrivacy()
@@ -113,7 +108,6 @@ final class MenuModel: ObservableObject {
 
   func setKeyboardEnabled(_ item: KeyboardItem, enabled: Bool) {
     guard !busy else { return }
-    // Optimistic UI so the toggle feels instant.
     if let idx = keyboards.firstIndex(where: { $0.id == item.id }) {
       var copy = keyboards
       copy[idx].enabled = enabled
@@ -125,6 +119,8 @@ final class MenuModel: ObservableObject {
     Task.detached {
       do {
         try DaemonController.setKeyboardEnabled(name: name, enabled: enabled)
+        // Give the remapper a moment to hot-reload disabled_devices.
+        try? await Task.sleep(nanoseconds: 700_000_000)
         let items = (try? DaemonController.listKeyboards())
           ?? DaemonController.keyboardsFromConfigAndCache()
         await MainActor.run {
@@ -132,6 +128,9 @@ final class MenuModel: ObservableObject {
           self.didLiveScan = true
           self.isOn = DaemonController.statusOn()
           self.busy = false
+          self.lastError = enabled
+            ? nil
+            : "\(MenuModel.shortLabel(for: name)) muted — no keys from that board."
         }
       } catch {
         await MainActor.run {
@@ -257,13 +256,12 @@ final class MenuModel: ObservableObject {
     NSApp.terminate(nil)
   }
 
-  /// Short label for the menu (full name stays the id for ctl).
   static func shortLabel(for name: String) -> String {
     if name.localizedCaseInsensitiveContains("Apple Internal") {
       return "MacBook Keyboard"
     }
-    if name.count > 28 {
-      return String(name.prefix(25)) + "…"
+    if name.count > 26 {
+      return String(name.prefix(23)) + "…"
     }
     return name
   }
@@ -273,21 +271,21 @@ struct ContentView: View {
   @ObservedObject var model: MenuModel
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 10) {
+    VStack(alignment: .leading, spacing: 12) {
       HStack(spacing: 8) {
         Button("Turn On") { model.setEnabled(true) }
           .disabled(model.busy || (model.isOn && !model.needsPrivacyFix))
         Button("Turn Off") { model.setEnabled(false) }
           .disabled(model.busy || !model.isOn)
-        Spacer()
+        Spacer(minLength: 8)
         Text(model.isOn ? "On" : "Off")
-          .foregroundStyle(model.isOn ? .green : .secondary)
           .font(.caption.weight(.semibold))
+          .foregroundStyle(model.isOn ? Color.green : Color.secondary)
       }
 
       if model.needsPrivacyFix || !model.isOn {
         HStack(spacing: 8) {
-          Button("Privacy Settings…") { model.openPrivacySettings() }
+          Button("Privacy…") { model.openPrivacySettings() }
           if model.needsPrivacyFix {
             Button("Fix Privacy") { model.applyPrivacyRestart() }
               .disabled(model.busy)
@@ -297,33 +295,58 @@ struct ContentView: View {
 
       Divider()
 
-      HStack {
-        Text("Keyboards")
-          .font(.headline)
-        Spacer()
-        Button(model.busy ? "Scanning…" : "Scan") {
+      HStack(alignment: .firstTextBaseline) {
+        VStack(alignment: .leading, spacing: 2) {
+          Text("Keyboards")
+            .font(.headline)
+          Text("Off = muted completely")
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+        }
+        Spacer(minLength: 8)
+        Button(model.busy ? "…" : "Scan") {
           model.refreshKeyboards()
         }
         .disabled(model.busy)
+        .controlSize(.small)
       }
 
       if model.keyboards.isEmpty {
-        Text("No keyboards yet — click Scan (password once).")
+        Text("No keyboards yet — click Scan.")
           .font(.caption)
           .foregroundStyle(.secondary)
+          .frame(maxWidth: .infinity, alignment: .leading)
       } else {
-        VStack(alignment: .leading, spacing: 4) {
-          ForEach(model.keyboards) { kb in
-            Toggle(isOn: Binding(
-              get: { kb.enabled },
-              set: { model.setKeyboardEnabled(kb, enabled: $0) }
-            )) {
+        VStack(spacing: 0) {
+          ForEach(Array(model.keyboards.enumerated()), id: \.element.id) { index, kb in
+            HStack(alignment: .center, spacing: 12) {
               Text(MenuModel.shortLabel(for: kb.name))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
+              Toggle("", isOn: Binding(
+                get: { kb.enabled },
+                set: { model.setKeyboardEnabled(kb, enabled: $0) }
+              ))
+              .labelsHidden()
+              .toggleStyle(.switch)
+              .controlSize(.small)
+              .disabled(model.busy || !model.isOn)
+              .frame(width: 40, alignment: .trailing)
             }
-            .toggleStyle(.switch)
-            .disabled(model.busy)
+            .padding(.vertical, 6)
+            if index < model.keyboards.count - 1 {
+              Divider()
+            }
           }
         }
+        .padding(.horizontal, 4)
+      }
+
+      if !model.isOn {
+        Text("Turn remapping On to mute/unmute boards.")
+          .font(.caption2)
+          .foregroundStyle(.secondary)
       }
 
       Divider()
@@ -347,12 +370,12 @@ struct ContentView: View {
         Text(err)
           .foregroundStyle(.secondary)
           .font(.caption)
-          .lineLimit(5)
+          .lineLimit(4)
           .fixedSize(horizontal: false, vertical: true)
       }
     }
-    .padding(12)
-    .frame(width: 300)
+    .padding(14)
+    .frame(width: 320)
     .onAppear {
       if model.keyboards.isEmpty {
         model.keyboards = DaemonController.keyboardsFromConfigAndCache()

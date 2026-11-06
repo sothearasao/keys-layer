@@ -327,6 +327,7 @@ dedupe_patterns() {
   fi
 }
 
+
 cmd_devices() {
   local bin
   bin="$(resolve_bin)"
@@ -383,7 +384,11 @@ cmd_device_enable() {
   done < <(read_toml_string_array devices)
   if [[ "${#devices[@]}" -gt 0 ]] && ! name_matches_patterns "${target}" "${devices[@]+"${devices[@]}"}"; then
     devices+=("${pat}")
-    mapfile -t devices < <(dedupe_patterns "${devices[@]}")
+    local deduped_dev=()
+    while IFS= read -r line; do
+      [[ -n "${line}" ]] && deduped_dev+=("${line}")
+    done < <(dedupe_patterns "${devices[@]}")
+    devices=("${deduped_dev[@]+"${deduped_dev[@]}"}")
     write_toml_string_array devices "${devices[@]}"
   fi
 
@@ -408,7 +413,11 @@ cmd_device_disable() {
   fi
 
   muted+=("${pat}")
-  mapfile -t muted < <(dedupe_patterns "${muted[@]}")
+  local deduped_muted=()
+  while IFS= read -r line; do
+    [[ -n "${line}" ]] && deduped_muted+=("${line}")
+  done < <(dedupe_patterns "${muted[@]}")
+  muted=("${deduped_muted[@]+"${deduped_muted[@]}"}")
 
   # Keep it on devices= so VirtualHID keeps the board seized while muted.
   local devices=()
@@ -417,7 +426,11 @@ cmd_device_disable() {
   done < <(read_toml_string_array devices)
   if [[ "${#devices[@]}" -gt 0 ]] && ! name_matches_patterns "${target}" "${devices[@]+"${devices[@]}"}"; then
     devices+=("${pat}")
-    mapfile -t devices < <(dedupe_patterns "${devices[@]}")
+    local deduped_dev=()
+    while IFS= read -r line; do
+      [[ -n "${line}" ]] && deduped_dev+=("${line}")
+    done < <(dedupe_patterns "${devices[@]}")
+    devices=("${deduped_dev[@]+"${deduped_dev[@]}"}")
     write_toml_string_array devices "${devices[@]}"
   fi
 

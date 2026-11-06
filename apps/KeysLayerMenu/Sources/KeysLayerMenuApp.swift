@@ -79,21 +79,20 @@ final class MenuModel: ObservableObject {
     }
   }
 
-  func refreshKeyboards() {
+  func refreshKeyboards(hardwareScan: Bool = false) {
     guard !busy else { return }
     busy = true
     lastError = nil
     Task.detached {
       do {
-        let items = try DaemonController.listKeyboards()
+        // Config refresh is free; hardware Scan asks for admin once.
+        let items = try DaemonController.listKeyboards(preferHardware: hardwareScan)
         await MainActor.run {
-          self.keyboards = items.isEmpty
-            ? DaemonController.keyboardsFromConfigAndCache()
-            : items
-          self.didLiveScan = !items.isEmpty
+          self.keyboards = items
+          self.didLiveScan = hardwareScan && !items.isEmpty
           self.busy = false
           if items.isEmpty {
-            self.lastError = "No keyboards reported. Is VirtualHID running?"
+            self.lastError = "No keyboards in config yet."
           }
         }
       } catch {
@@ -118,18 +117,16 @@ final class MenuModel: ObservableObject {
     let name = item.name
     Task.detached {
       do {
+        // No admin — writes ~/.config; remapper hot-reloads as root.
         try DaemonController.setKeyboardEnabled(name: name, enabled: enabled)
-        // Give the remapper a moment to hot-reload disabled_devices.
-        try? await Task.sleep(nanoseconds: 700_000_000)
-        let items = (try? DaemonController.listKeyboards())
-          ?? DaemonController.keyboardsFromConfigAndCache()
+        try? await Task.sleep(nanoseconds: 900_000_000)
+        let items = DaemonController.keyboardsFromConfigAndCache()
         await MainActor.run {
           self.keyboards = items
-          self.didLiveScan = true
           self.isOn = DaemonController.statusOn()
           self.busy = false
           self.lastError = enabled
-            ? nil
+            ? "\(MenuModel.shortLabel(for: name)) unmuted."
             : "\(MenuModel.shortLabel(for: name)) muted — no keys from that board."
         }
       } catch {
@@ -157,13 +154,8 @@ final class MenuModel: ObservableObject {
         if target {
           try? await Task.sleep(nanoseconds: 1_800_000_000)
         }
-        let listed: [KeyboardItem]
-        if target {
-          listed = (try? DaemonController.listKeyboards())
-            ?? DaemonController.keyboardsFromConfigAndCache()
-        } else {
-          listed = DaemonController.keyboardsFromConfigAndCache()
-        }
+        // Avoid a second admin prompt right after Turn On/Off.
+        let listed = DaemonController.keyboardsFromConfigAndCache()
         await MainActor.run {
           self.isOn = DaemonController.statusOn()
           self.keyboards = listed
@@ -190,11 +182,9 @@ final class MenuModel: ObservableObject {
         try DaemonController.setEnabled(false)
         try DaemonController.setEnabled(true)
         try? await Task.sleep(nanoseconds: 1_500_000_000)
-        let keyboards = (try? DaemonController.listKeyboards())
-          ?? DaemonController.keyboardsFromConfigAndCache()
+        let keyboards = DaemonController.keyboardsFromConfigAndCache()
         await MainActor.run {
           self.keyboards = keyboards
-          self.didLiveScan = true
           self.isOn = DaemonController.statusOn()
           self.busy = false
           let denied = DaemonController.currentSessionDeniedPrivacy()
@@ -304,8 +294,8 @@ struct ContentView: View {
             .foregroundStyle(.secondary)
         }
         Spacer(minLength: 8)
-        Button(model.busy ? "…" : "Scan") {
-          model.refreshKeyboards()
+        Button(model.busy ? "…" : "Refresh") {
+          model.refreshKeyboards(hardwareScan: false)
         }
         .disabled(model.busy)
         .controlSize(.small)

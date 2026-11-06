@@ -21,9 +21,9 @@ keys-layer-ctl — start/stop/status for the keys-layer daemon
   keys-layer-ctl on                  ensure config+plist, then start remapping
   keys-layer-ctl off                 stop remapping (keyboard back to macOS)
   keys-layer-ctl restart             restart remapping if it is running
-  keys-layer-ctl devices             list connected keyboards (name<TAB>on|off)
-  keys-layer-ctl device-enable NAME  unmute keyboard (remapping active again)
-  keys-layer-ctl device-disable NAME mute keyboard completely (no keys reach OS)
+  keys-layer-ctl devices             list connected keyboards (name<TAB>on|off; needs root)
+  keys-layer-ctl device-enable NAME  unmute keyboard (user config; no sudo)
+  keys-layer-ctl device-disable NAME mute keyboard completely (user config; no sudo)
 EOF
 }
 
@@ -262,14 +262,30 @@ print("\n".join(a or b for a, b in parts))
 PY
 }
 
+# User-owned config only — never touches LaunchDaemon (so mute works without sudo).
+ensure_user_config() {
+  local config_dir config_path example real_user
+  real_user="${SUDO_USER:-${USER}}"
+  config_dir="$(resolve_home)/.config/keys-layer"
+  config_path="${config_dir}/config.toml"
+  mkdir -p "${config_dir}"
+  if [[ ! -f "${config_path}" ]]; then
+    example="$(resolve_example_config)"
+    if [[ -z "${example}" ]]; then
+      echo "error: no config and no config.example.toml to copy" >&2
+      exit 1
+    fi
+    cp "${example}" "${config_path}"
+    chown "${real_user}" "${config_path}" 2>/dev/null || true
+  fi
+}
+
 write_toml_string_array() {
   local key="$1"
   shift
-  local cfg
+  ensure_user_config
+  local cfg tmp json
   cfg="$(resolve_config_path)"
-  ensure_ready
-  cfg="$(resolve_config_path)"
-  local tmp json
   tmp="$(mktemp)"
   json="$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1:]))' "$@")"
   python3 - "${cfg}" "${tmp}" "${key}" "${json}" <<'PY'
@@ -359,7 +375,7 @@ cmd_devices() {
 cmd_device_enable() {
   local target="$1"
   [[ -n "${target}" ]] || { echo "usage: keys-layer-ctl device-enable NAME" >&2; exit 1; }
-  ensure_ready
+  ensure_user_config
   local pat muted=() kept=()
   pat="$(pattern_for_name "${target}")"
 
@@ -399,7 +415,7 @@ cmd_device_enable() {
 cmd_device_disable() {
   local target="$1"
   [[ -n "${target}" ]] || { echo "usage: keys-layer-ctl device-disable NAME" >&2; exit 1; }
-  ensure_ready
+  ensure_user_config
   local pat muted=()
   pat="$(pattern_for_name "${target}")"
 
@@ -480,17 +496,10 @@ case "${cmd}" in
     cmd_devices
     ;;
   device-enable)
-    if [[ "$(id -u)" -ne 0 ]]; then
-      echo "error: 'device-enable' requires root" >&2
-      exit 1
-    fi
+    # Writes ~/.config only; remapper hot-reloads as root — no sudo.
     cmd_device_enable "${2:-}"
     ;;
   device-disable)
-    if [[ "$(id -u)" -ne 0 ]]; then
-      echo "error: 'device-disable' requires root" >&2
-      exit 1
-    fi
     cmd_device_disable "${2:-}"
     ;;
   -h|--help|"")

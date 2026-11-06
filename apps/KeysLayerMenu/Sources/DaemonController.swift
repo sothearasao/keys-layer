@@ -8,7 +8,8 @@ struct KeyboardItem: Identifiable, Equatable {
   var enabled: Bool
 }
 
-/// Talks to `keys-layer-ctl` (status is unprivileged; on/off/devices need admin).
+/// Talks to `keys-layer-ctl`.
+/// Turn On/Off need admin once. Mute/unmute writes user config (no password).
 enum DaemonController {
   enum Action: String {
     case status, on, off, restart, devices
@@ -53,7 +54,7 @@ enum DaemonController {
   }
 
   static func statusOn() -> Bool {
-    runUnprivileged(.status).exitCode == 0
+    runCtl("status").exitCode == 0
   }
 
   static func currentSessionDeniedPrivacy() -> Bool {
@@ -72,40 +73,44 @@ enum DaemonController {
     return session.contains("not permitted")
   }
 
+  /// LaunchDaemon start/stop — password once (macOS caches briefly afterward).
   static func setEnabled(_ enabled: Bool) throws {
-    let action: Action = enabled ? .on : .off
-    let r = try runPrivileged(action.rawValue)
-    if r.exitCode != 0 {
-      throw ControllerError.commandFailed(action.rawValue, r.output)
-    }
-  }
-
-  /// Connected keyboards: on = live input, off = muted (requires admin + VirtualHID).
-  static func listKeyboards() throws -> [KeyboardItem] {
-    let r = try runPrivileged(Action.devices.rawValue)
-    if r.exitCode != 0 {
-      throw ControllerError.commandFailed("devices", r.output)
-    }
-    var items: [KeyboardItem] = []
-    for line in r.output.split(whereSeparator: \.isNewline) {
-      let parts = line.split(separator: "\t", maxSplits: 1).map(String.init)
-      guard parts.count == 2 else { continue }
-      let enabled = parts[1].trimmingCharacters(in: .whitespaces) == "on"
-      items.append(KeyboardItem(name: parts[0], enabled: enabled))
-    }
-    rememberNames(items.map(\.name))
-    return items
-  }
-
-  static func setKeyboardEnabled(name: String, enabled: Bool) throws {
-    let action = enabled ? "device-enable" : "device-disable"
-    let r = try runPrivileged(action, extraArg: name)
+    let action = enabled ? "on" : "off"
+    let r = try runPrivileged(action)
     if r.exitCode != 0 {
       throw ControllerError.commandFailed(action, r.output)
     }
   }
 
-  /// Immediate list from config + cache — no password.
+  /// Prefer cached/config list (no password). Hardware scan still needs admin.
+  static func listKeyboards(preferHardware: Bool = false) throws -> [KeyboardItem] {
+    if preferHardware {
+      let r = try runPrivileged("devices")
+      if r.exitCode != 0 {
+        throw ControllerError.commandFailed("devices", r.output)
+      }
+      var items: [KeyboardItem] = []
+      for line in r.output.split(whereSeparator: \.isNewline) {
+        let parts = line.split(separator: "\t", maxSplits: 1).map(String.init)
+        guard parts.count == 2 else { continue }
+        let enabled = parts[1].trimmingCharacters(in: .whitespaces) == "on"
+        items.append(KeyboardItem(name: parts[0], enabled: enabled))
+      }
+      rememberNames(items.map(\.name))
+      if !items.isEmpty { return items }
+    }
+    return keyboardsFromConfigAndCache()
+  }
+
+  /// Mute/unmute via user config — no admin prompt. Daemon hot-reloads.
+  static func setKeyboardEnabled(name: String, enabled: Bool) throws {
+    let action = enabled ? "device-enable" : "device-disable"
+    let r = runCtl(action, extraArg: name)
+    if r.exitCode != 0 {
+      throw ControllerError.commandFailed(action, r.output)
+    }
+  }
+
   static func keyboardsFromConfigAndCache() -> [KeyboardItem] {
     let remap = readStringArray(key: "devices")
     let muted = readStringArray(key: "disabled_devices")
@@ -113,7 +118,9 @@ enum DaemonController {
     for p in remap where !names.contains(where: { $0.caseInsensitiveCompare(p) == .orderedSame }) {
       names.append(displayName(forPattern: p))
     }
-    for p in muted where !names.contains(where: { $0.localizedCaseInsensitiveContains(p) || p.localizedCaseInsensitiveContains($0) }) {
+    for p in muted where !names.contains(where: {
+      $0.localizedCaseInsensitiveContains(p) || p.localizedCaseInsensitiveContains($0)
+    }) {
       names.append(displayName(forPattern: p))
     }
     if names.isEmpty {
@@ -197,10 +204,14 @@ enum DaemonController {
     UserDefaults.standard.set(names, forKey: cachedNamesKey)
   }
 
-  private static func runUnprivileged(_ action: Action) -> Result {
+  private static func runCtl(_ action: String, extraArg: String? = nil) -> Result {
     let proc = Process()
     proc.executableURL = URL(fileURLWithPath: "/bin/bash")
-    proc.arguments = ["-lc", shellEscape(ctlPath()) + " " + action.rawValue]
+    var cmd = shellEscape(ctlPath()) + " " + shellEscape(action)
+    if let extraArg {
+      cmd += " " + shellEscape(extraArg)
+    }
+    proc.arguments = ["-lc", cmd]
     let pipe = Pipe()
     proc.standardOutput = pipe
     proc.standardError = pipe
@@ -217,10 +228,12 @@ enum DaemonController {
 
   private static func runPrivileged(_ action: String, extraArg: String? = nil) throws -> Result {
     let ctl = ctlPath()
-    var shell = "\(shellEscape(ctl)) \(action)"
+    var inner = "\(shellEscape(ctl)) \(action)"
     if let extraArg {
-      shell += " \(shellEscape(extraArg))"
+      inner += " \(shellEscape(extraArg))"
     }
+    // bash -lc keeps quoting reliable under AppleScript admin.
+    let shell = "/bin/bash -lc \(shellEscape(inner))"
     let apple = """
     do shell script \(appleString(shell)) with administrator privileges
     """

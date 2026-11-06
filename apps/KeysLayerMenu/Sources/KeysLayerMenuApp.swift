@@ -15,7 +15,8 @@ struct KeysLayerMenuApp: App {
         systemImage: model.isOn ? "keyboard.fill" : "keyboard"
       )
     }
-    .menuBarExtraStyle(.menu)
+    // Window style so keyboard toggles are always visible (plain .menu hid them).
+    .menuBarExtraStyle(.window)
   }
 }
 
@@ -30,10 +31,12 @@ final class MenuModel: ObservableObject {
 
   private var timer: Timer?
   private var didAutoRestartForPrivacy = false
+  private var didLiveScan = false
 
   var remapperPath: String { DaemonController.remapperBinaryPath() }
 
   init() {
+    keyboards = DaemonController.keyboardsFromConfigAndCache()
     refresh()
     refreshLaunchAtLogin()
     timer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
@@ -46,6 +49,13 @@ final class MenuModel: ObservableObject {
   func refresh() {
     guard !busy else { return }
     isOn = DaemonController.statusOn()
+    if !didLiveScan {
+      // Keep toggles visible from config while idle.
+      let seeded = DaemonController.keyboardsFromConfigAndCache()
+      if keyboards.isEmpty {
+        keyboards = seeded
+      }
+    }
     if isOn {
       let denied = DaemonController.currentSessionDeniedPrivacy()
       needsPrivacyFix = denied
@@ -82,7 +92,10 @@ final class MenuModel: ObservableObject {
       do {
         let items = try DaemonController.listKeyboards()
         await MainActor.run {
-          self.keyboards = items
+          self.keyboards = items.isEmpty
+            ? DaemonController.keyboardsFromConfigAndCache()
+            : items
+          self.didLiveScan = !items.isEmpty
           self.busy = false
           if items.isEmpty {
             self.lastError = "No keyboards reported. Is VirtualHID running?"
@@ -90,6 +103,7 @@ final class MenuModel: ObservableObject {
         }
       } catch {
         await MainActor.run {
+          self.keyboards = DaemonController.keyboardsFromConfigAndCache()
           self.lastError = error.localizedDescription
           self.busy = false
         }
@@ -99,20 +113,29 @@ final class MenuModel: ObservableObject {
 
   func setKeyboardEnabled(_ item: KeyboardItem, enabled: Bool) {
     guard !busy else { return }
+    // Optimistic UI so the toggle feels instant.
+    if let idx = keyboards.firstIndex(where: { $0.id == item.id }) {
+      var copy = keyboards
+      copy[idx].enabled = enabled
+      keyboards = copy
+    }
     busy = true
     lastError = nil
     let name = item.name
     Task.detached {
       do {
         try DaemonController.setKeyboardEnabled(name: name, enabled: enabled)
-        let items = try DaemonController.listKeyboards()
+        let items = (try? DaemonController.listKeyboards())
+          ?? DaemonController.keyboardsFromConfigAndCache()
         await MainActor.run {
           self.keyboards = items
+          self.didLiveScan = true
           self.isOn = DaemonController.statusOn()
           self.busy = false
         }
       } catch {
         await MainActor.run {
+          self.keyboards = DaemonController.keyboardsFromConfigAndCache()
           self.lastError = error.localizedDescription
           self.busy = false
         }
@@ -137,13 +160,15 @@ final class MenuModel: ObservableObject {
         }
         let listed: [KeyboardItem]
         if target {
-          listed = (try? DaemonController.listKeyboards()) ?? []
+          listed = (try? DaemonController.listKeyboards())
+            ?? DaemonController.keyboardsFromConfigAndCache()
         } else {
-          listed = []
+          listed = DaemonController.keyboardsFromConfigAndCache()
         }
         await MainActor.run {
           self.isOn = DaemonController.statusOn()
-          if target { self.keyboards = listed }
+          self.keyboards = listed
+          self.didLiveScan = target && !listed.isEmpty
           self.busy = false
           self.refresh()
         }
@@ -166,9 +191,11 @@ final class MenuModel: ObservableObject {
         try DaemonController.setEnabled(false)
         try DaemonController.setEnabled(true)
         try? await Task.sleep(nanoseconds: 1_500_000_000)
-        let keyboards = (try? DaemonController.listKeyboards()) ?? []
+        let keyboards = (try? DaemonController.listKeyboards())
+          ?? DaemonController.keyboardsFromConfigAndCache()
         await MainActor.run {
           self.keyboards = keyboards
+          self.didLiveScan = true
           self.isOn = DaemonController.statusOn()
           self.busy = false
           let denied = DaemonController.currentSessionDeniedPrivacy()
@@ -235,8 +262,8 @@ final class MenuModel: ObservableObject {
     if name.localizedCaseInsensitiveContains("Apple Internal") {
       return "MacBook Keyboard"
     }
-    if name.count > 36 {
-      return String(name.prefix(33)) + "…"
+    if name.count > 28 {
+      return String(name.prefix(25)) + "…"
     }
     return name
   }
@@ -246,87 +273,90 @@ struct ContentView: View {
   @ObservedObject var model: MenuModel
 
   var body: some View {
-    Button {
-      model.setEnabled(true)
-    } label: {
-      HStack {
-        Text("Turn Remapping On")
-        if model.isOn && !model.needsPrivacyFix { Text("✓") }
+    VStack(alignment: .leading, spacing: 10) {
+      HStack(spacing: 8) {
+        Button("Turn On") { model.setEnabled(true) }
+          .disabled(model.busy || (model.isOn && !model.needsPrivacyFix))
+        Button("Turn Off") { model.setEnabled(false) }
+          .disabled(model.busy || !model.isOn)
+        Spacer()
+        Text(model.isOn ? "On" : "Off")
+          .foregroundStyle(model.isOn ? .green : .secondary)
+          .font(.caption.weight(.semibold))
       }
-    }
-    .disabled(model.busy || (model.isOn && !model.needsPrivacyFix))
 
-    Button {
-      model.setEnabled(false)
-    } label: {
-      HStack {
-        Text("Turn Remapping Off")
-        if !model.isOn { Text("✓") }
-      }
-    }
-    .disabled(model.busy || !model.isOn)
-
-    if model.needsPrivacyFix || model.isOn == false {
-      Divider()
-      Button("Open Privacy Settings…") { model.openPrivacySettings() }
-      if model.needsPrivacyFix {
-        Button("Fix Privacy / Restart Remapping") { model.applyPrivacyRestart() }
-          .disabled(model.busy)
-      }
-    }
-
-    Divider()
-
-    // Section title as a disabled button — plain Text() is easy to miss in .menu style.
-    Button("Keyboards") {}
-      .disabled(true)
-
-    if model.keyboards.isEmpty {
-      Button(model.busy ? "Loading keyboards…" : "Load Connected Keyboards…") {
-        model.refreshKeyboards()
-      }
-      .disabled(model.busy)
-    } else {
-      ForEach(model.keyboards) { kb in
-        Button {
-          model.setKeyboardEnabled(kb, enabled: !kb.enabled)
-        } label: {
-          HStack {
-            Text(MenuModel.shortLabel(for: kb.name))
-            if kb.enabled { Text("✓") }
+      if model.needsPrivacyFix || !model.isOn {
+        HStack(spacing: 8) {
+          Button("Privacy Settings…") { model.openPrivacySettings() }
+          if model.needsPrivacyFix {
+            Button("Fix Privacy") { model.applyPrivacyRestart() }
+              .disabled(model.busy)
           }
+        }
+      }
+
+      Divider()
+
+      HStack {
+        Text("Keyboards")
+          .font(.headline)
+        Spacer()
+        Button(model.busy ? "Scanning…" : "Scan") {
+          model.refreshKeyboards()
         }
         .disabled(model.busy)
       }
-      Button("Reload Keyboards…") { model.refreshKeyboards() }
-        .disabled(model.busy)
-    }
 
-    Divider()
+      if model.keyboards.isEmpty {
+        Text("No keyboards yet — click Scan (password once).")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      } else {
+        VStack(alignment: .leading, spacing: 4) {
+          ForEach(model.keyboards) { kb in
+            Toggle(isOn: Binding(
+              get: { kb.enabled },
+              set: { model.setKeyboardEnabled(kb, enabled: $0) }
+            )) {
+              Text(MenuModel.shortLabel(for: kb.name))
+            }
+            .toggleStyle(.switch)
+            .disabled(model.busy)
+          }
+        }
+      }
 
-    Toggle(
-      "Launch Menu at Login",
-      isOn: Binding(
-        get: { model.launchAtLogin },
-        set: { model.setLaunchAtLogin($0) }
-      )
-    )
-
-    Divider()
-
-    Button("Open Config") { model.openConfig() }
-    Button("Open Log") { model.openLog() }
-
-    if let err = model.lastError, !err.isEmpty {
       Divider()
-      Text(err)
-        .foregroundStyle(.secondary)
-        .font(.caption)
-        .lineLimit(6)
+
+      Toggle(
+        "Launch Menu at Login",
+        isOn: Binding(
+          get: { model.launchAtLogin },
+          set: { model.setLaunchAtLogin($0) }
+        )
+      )
+
+      HStack {
+        Button("Config") { model.openConfig() }
+        Button("Log") { model.openLog() }
+        Spacer()
+        Button("Quit") { model.quit() }
+      }
+
+      if let err = model.lastError, !err.isEmpty {
+        Text(err)
+          .foregroundStyle(.secondary)
+          .font(.caption)
+          .lineLimit(5)
+          .fixedSize(horizontal: false, vertical: true)
+      }
     }
-
-    Divider()
-
-    Button("Quit Keys Layer Menu") { model.quit() }
+    .padding(12)
+    .frame(width: 300)
+    .onAppear {
+      if model.keyboards.isEmpty {
+        model.keyboards = DaemonController.keyboardsFromConfigAndCache()
+      }
+    }
   }
 }

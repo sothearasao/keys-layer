@@ -18,6 +18,8 @@ enum DaemonController {
     let output: String
   }
 
+  private static let cachedNamesKey = "keysLayer.cachedKeyboardNames"
+
   static func remapperBinaryPath() -> String {
     if let env = ProcessInfo.processInfo.environment["KEYS_LAYER_BIN"], !env.isEmpty {
       return env
@@ -90,6 +92,7 @@ enum DaemonController {
       let enabled = parts[1].trimmingCharacters(in: .whitespaces) == "on"
       items.append(KeyboardItem(name: parts[0], enabled: enabled))
     }
+    rememberNames(items.map(\.name))
     return items
   }
 
@@ -99,6 +102,32 @@ enum DaemonController {
     if r.exitCode != 0 {
       throw ControllerError.commandFailed(action, r.output)
     }
+  }
+
+  /// Immediate list from config + cache — no password. Toggles show even before a live scan.
+  static func keyboardsFromConfigAndCache() -> [KeyboardItem] {
+    let patterns = readDevicePatterns()
+    var names = rememberedNames()
+    for p in patterns where !names.contains(where: { $0.caseInsensitiveCompare(p) == .orderedSame }) {
+      names.append(displayName(forPattern: p))
+    }
+    if names.isEmpty {
+      names = ["Apple Internal Keyboard / Trackpad"]
+    }
+
+    if patterns.isEmpty {
+      // Empty allowlist ⇒ every keyboard remapped.
+      return names.map { KeyboardItem(name: $0, enabled: true) }
+    }
+
+    return names.map { name in
+      let enabled = patterns.contains { pattern in
+        name.range(of: pattern, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+          || pattern.range(of: name, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+      }
+      return KeyboardItem(name: name, enabled: enabled)
+    }
+    .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
   }
 
   static func openPrivacyHelp() {
@@ -117,6 +146,54 @@ enum DaemonController {
         break
       }
     }
+  }
+
+  private static func configURL() -> URL {
+    FileManager.default.homeDirectoryForCurrentUser
+      .appendingPathComponent(".config/keys-layer/config.toml")
+  }
+
+  private static func readDevicePatterns() -> [String] {
+    guard let text = try? String(contentsOf: configURL(), encoding: .utf8) else { return [] }
+    guard let regex = try? NSRegularExpression(
+      pattern: #"devices\s*=\s*\[(.*?)\]"#,
+      options: [.dotMatchesLineSeparators]
+    ) else { return [] }
+    let range = NSRange(text.startIndex..<text.endIndex, in: text)
+    guard let match = regex.firstMatch(in: text, options: [], range: range),
+          let bodyRange = Range(match.range(at: 1), in: text)
+    else { return [] }
+    let body = String(text[bodyRange])
+    let partRegex = try? NSRegularExpression(pattern: #""([^"]*)"|'([^']*)'"#)
+    var out: [String] = []
+    let bodyRangeNS = NSRange(body.startIndex..<body.endIndex, in: body)
+    partRegex?.enumerateMatches(in: body, options: [], range: bodyRangeNS) { m, _, _ in
+      guard let m else { return }
+      for i in 1...2 {
+        if let r = Range(m.range(at: i), in: body) {
+          let s = String(body[r])
+          if !s.isEmpty { out.append(s) }
+          break
+        }
+      }
+    }
+    return out
+  }
+
+  private static func displayName(forPattern pattern: String) -> String {
+    if pattern.localizedCaseInsensitiveContains("Apple Internal") {
+      return "Apple Internal Keyboard / Trackpad"
+    }
+    return pattern
+  }
+
+  private static func rememberedNames() -> [String] {
+    UserDefaults.standard.stringArray(forKey: cachedNamesKey) ?? []
+  }
+
+  private static func rememberNames(_ names: [String]) {
+    guard !names.isEmpty else { return }
+    UserDefaults.standard.set(names, forKey: cachedNamesKey)
   }
 
   private static func runUnprivileged(_ action: Action) -> Result {

@@ -2,10 +2,25 @@ import AppKit
 import Foundation
 
 struct KeyboardItem: Identifiable, Equatable {
-  var id: String { name }
+  /// Stable id so "Apple Internal" and "Apple Internal Keyboard / Trackpad" collapse.
+  var id: String { Self.canonicalKey(name) }
   let name: String
   /// `true` = keyboard produces input (remapped). `false` = muted completely.
   var enabled: Bool
+
+  static func canonicalKey(_ name: String) -> String {
+    let n = name.lowercased()
+    if n.contains("apple internal") { return "apple-internal" }
+    if n.contains("moonlander") { return "moonlander" }
+    return n
+  }
+
+  static func sameDevice(_ a: String, _ b: String) -> Bool {
+    if canonicalKey(a) == canonicalKey(b) { return true }
+    let al = a.lowercased()
+    let bl = b.lowercased()
+    return al == bl || al.contains(bl) || bl.contains(al)
+  }
 }
 
 /// Talks to `keys-layer-ctl`.
@@ -114,27 +129,40 @@ enum DaemonController {
   static func keyboardsFromConfigAndCache() -> [KeyboardItem] {
     let remap = readStringArray(key: "devices")
     let muted = readStringArray(key: "disabled_devices")
-    var names = rememberedNames()
-    for p in remap where !names.contains(where: { $0.caseInsensitiveCompare(p) == .orderedSame }) {
-      names.append(displayName(forPattern: p))
-    }
-    for p in muted where !names.contains(where: {
-      $0.localizedCaseInsensitiveContains(p) || p.localizedCaseInsensitiveContains($0)
-    }) {
-      names.append(displayName(forPattern: p))
-    }
-    if names.isEmpty {
-      names = ["Apple Internal Keyboard / Trackpad"]
+
+    // Merge cache + config patterns, then collapse aliases (short pattern vs full name).
+    var candidates: [String] = rememberedNames()
+    for p in remap { candidates.append(displayName(forPattern: p)) }
+    for p in muted { candidates.append(displayName(forPattern: p)) }
+    if candidates.isEmpty {
+      candidates = ["Apple Internal Keyboard / Trackpad"]
     }
 
+    let names = dedupeDeviceNames(candidates)
+    rememberNames(names)
+
     return names.map { name in
-      let isMuted = muted.contains { pattern in
-        name.range(of: pattern, options: [.caseInsensitive, .diacriticInsensitive]) != nil
-          || pattern.range(of: name, options: [.caseInsensitive, .diacriticInsensitive]) != nil
-      }
+      let isMuted = muted.contains { KeyboardItem.sameDevice(name, $0) }
       return KeyboardItem(name: name, enabled: !isMuted)
     }
     .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+  }
+
+  /// Keep one row per physical board; prefer the longer/full product name.
+  private static func dedupeDeviceNames(_ raw: [String]) -> [String] {
+    var out: [String] = []
+    for name in raw {
+      let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !trimmed.isEmpty else { continue }
+      if let idx = out.firstIndex(where: { KeyboardItem.sameDevice($0, trimmed) }) {
+        if trimmed.count > out[idx].count {
+          out[idx] = trimmed
+        }
+      } else {
+        out.append(trimmed)
+      }
+    }
+    return out
   }
 
   static func openPrivacyHelp() {

@@ -43,8 +43,8 @@ static RECOVER_STREAK: AtomicU32 = AtomicU32::new(0);
 /// When true, swap grave ↔ non_us_backslash for VirtualHID (see settings.iso_grave_swap).
 static ISO_GRAVE_SWAP: AtomicBool = AtomicBool::new(false);
 
-/// Print HID product names useful for `settings.devices` (does not seize anything).
-pub fn list_devices() -> Result<(), String> {
+/// Keyboard product names suitable for `settings.devices` (excludes VirtualHID / pointers).
+pub fn connected_keyboard_names() -> Result<Vec<String>, String> {
     ensure_root()?;
 
     if !driver_activated() {
@@ -62,39 +62,54 @@ pub fn list_devices() -> Result<(), String> {
         );
     }
 
+    let mut keyboards = Vec::new();
+    for d in &all {
+        if is_virtual_hid_name(&d.product_key) {
+            continue;
+        }
+        if looks_like_pointer_peripheral(&d.product_key) {
+            continue;
+        }
+        if !keyboards.iter().any(|n| n == &d.product_key) {
+            keyboards.push(d.product_key.clone());
+        }
+    }
+    keyboards.sort();
+    Ok(keyboards)
+}
+
+/// Print HID product names useful for `settings.devices` (does not seize anything).
+pub fn list_devices() -> Result<(), String> {
+    list_devices_with_format(false)
+}
+
+/// One keyboard name per line (for menu bar / scripts).
+pub fn list_devices_plain() -> Result<(), String> {
+    list_devices_with_format(true)
+}
+
+fn list_devices_with_format(plain: bool) -> Result<(), String> {
+    let keyboards = connected_keyboard_names()?;
+
+    if plain {
+        for name in &keyboards {
+            println!("{name}");
+        }
+        return Ok(());
+    }
+
     println!("Connected HID devices (DriverKit):");
     println!();
     println!("  Use a product-name substring in settings.devices, e.g.:");
     println!("    devices = [\"Apple Internal\"]");
     println!();
 
-    let mut keyboards = Vec::new();
-    let mut skipped = Vec::new();
-    for d in &all {
-        if is_virtual_hid_name(&d.product_key) {
-            continue;
-        }
-        if looks_like_pointer_peripheral(&d.product_key) {
-            skipped.push(d.product_key.as_str());
-        } else {
-            keyboards.push(d.product_key.as_str());
-        }
-    }
-
     if keyboards.is_empty() {
-        println!("Keyboards (would seize if devices = []):");
+        println!("Keyboards (candidates for settings.devices):");
         println!("  (none)");
     } else {
         println!("Keyboards (candidates for settings.devices):");
         for name in &keyboards {
-            println!("  • {name}");
-        }
-    }
-
-    if !skipped.is_empty() {
-        println!();
-        println!("Skipped as likely mouse/pointer (not seized):");
-        for name in &skipped {
             println!("  • {name}");
         }
     }

@@ -18,10 +18,16 @@ fn main() {
             print_usage();
             process::exit(0);
         }
-        Some("--list-devices") => {
+        Some("--list-devices") | Some("--list-devices-plain") => {
+            let plain = first.as_deref() == Some("--list-devices-plain");
             #[cfg(target_os = "macos")]
             {
-                if let Err(err) = keys_layer::macos::list_devices() {
+                let result = if plain {
+                    keys_layer::macos::list_devices_plain()
+                } else {
+                    keys_layer::macos::list_devices()
+                };
+                if let Err(err) = result {
                     eprintln!("error: {err}");
                     process::exit(1);
                 }
@@ -29,6 +35,7 @@ fn main() {
             }
             #[cfg(target_os = "linux")]
             {
+                let _ = plain;
                 if let Err(err) = keys_layer::linux::list_devices() {
                     eprintln!("error: {err}");
                     process::exit(1);
@@ -37,6 +44,7 @@ fn main() {
             }
             #[cfg(target_os = "windows")]
             {
+                let _ = plain;
                 eprintln!(
                     "settings.devices is ignored on Windows (system-wide LLHOOK).\n\
                      No per-device list is available."
@@ -45,6 +53,7 @@ fn main() {
             }
             #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
             {
+                let _ = plain;
                 eprintln!("unsupported platform");
                 process::exit(1);
             }
@@ -109,9 +118,10 @@ fn print_usage() {
         "usage: keys-layer [config.toml]\n\
          \n\
          options:\n\
-           --list-devices   print connected keyboard names for settings.devices\n\
-                            (macOS: sudo; Linux: input group or root)\n\
-           -h, --help       show this help"
+           --list-devices         print connected keyboard names for settings.devices\n\
+                                  (macOS: sudo; Linux: input group or root)\n\
+           --list-devices-plain   one keyboard name per line (for scripts / menu bar)\n\
+           -h, --help             show this help"
     );
 }
 

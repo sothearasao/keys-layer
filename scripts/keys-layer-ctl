@@ -17,9 +17,13 @@ usage() {
   cat <<'EOF'
 keys-layer-ctl — start/stop/status for the keys-layer daemon
 
-  keys-layer-ctl status   print on|off (exit 0 if on)
-  keys-layer-ctl on       ensure config+plist, then start remapping
-  keys-layer-ctl off      stop remapping (keyboard back to macOS)
+  keys-layer-ctl status              print on|off (exit 0 if on)
+  keys-layer-ctl on                  ensure config+plist, then start remapping
+  keys-layer-ctl off                 stop remapping (keyboard back to macOS)
+  keys-layer-ctl restart             restart remapping if it is running
+  keys-layer-ctl devices             list connected keyboards (name<TAB>on|off)
+  keys-layer-ctl device-enable NAME  allowlist keyboard (substring / full name)
+  keys-layer-ctl device-disable NAME remove keyboard from allowlist
 EOF
 }
 
@@ -224,6 +228,228 @@ cmd_on() {
   echo "on"
 }
 
+resolve_config_path() {
+  echo "$(resolve_home)/.config/keys-layer/config.toml"
+}
+
+# Prefer short stable patterns for common boards.
+pattern_for_name() {
+  local name="$1"
+  case "${name}" in
+    *"Apple Internal"*) echo "Apple Internal" ;;
+    *"Moonlander"*) echo "Moonlander" ;;
+    *) echo "${name}" ;;
+  esac
+}
+
+# Read devices = [...] from config (supports single-line arrays).
+read_device_patterns() {
+  local cfg
+  cfg="$(resolve_config_path)"
+  [[ -f "${cfg}" ]] || { echo ""; return 0; }
+  python3 - "${cfg}" <<'PY'
+import re, sys
+text = open(sys.argv[1], encoding="utf-8").read()
+m = re.search(r'(?m)^devices\s*=\s*\[(.*?)\]', text, re.S)
+if not m:
+    print("")
+    raise SystemExit(0)
+body = m.group(1)
+parts = re.findall(r'"([^"]*)"|\'([^\']*)\'', body)
+print("\n".join(a or b for a, b in parts))
+PY
+}
+
+write_device_patterns() {
+  local cfg
+  cfg="$(resolve_config_path)"
+  ensure_ready
+  cfg="$(resolve_config_path)"
+  local tmp json
+  tmp="$(mktemp)"
+  json="$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1:]))' "$@")"
+  python3 - "${cfg}" "${tmp}" "${json}" <<'PY'
+import re, sys
+cfg, out, raw = sys.argv[1], sys.argv[2], sys.argv[3]
+text = open(cfg, encoding="utf-8").read()
+line = f"devices = {raw}"
+if re.search(r'(?ms)^devices\s*=\s*\[', text):
+    text = re.sub(r'(?ms)^devices\s*=\s*\[.*?\]', line, text, count=1)
+elif re.search(r'(?m)^\[settings\]', text):
+    text = re.sub(r'(?m)^(\[settings\]\s*\n)', r'\1' + line + "\n", text, count=1)
+else:
+    text = "[settings]\n" + line + "\n\n" + text
+open(out, "w", encoding="utf-8").write(text)
+PY
+  local real_user
+  real_user="${SUDO_USER:-${USER}}"
+  cp "${tmp}" "${cfg}"
+  chown "${real_user}" "${cfg}" 2>/dev/null || true
+  rm -f "${tmp}"
+}
+
+name_matches_patterns() {
+  local name="$1"
+  shift
+  local p name_lc p_lc
+  name_lc="$(printf '%s' "${name}" | tr '[:upper:]' '[:lower:]')"
+  # No patterns → allowlist empty → all enabled.
+  if [[ "$#" -eq 0 ]]; then
+    return 0
+  fi
+  for p in "$@"; do
+    [[ -z "$p" ]] && continue
+    p_lc="$(printf '%s' "${p}" | tr '[:upper:]' '[:lower:]')"
+    if [[ "${name_lc}" == *"${p_lc}"* ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+cmd_devices() {
+  local bin
+  bin="$(resolve_bin)"
+  if [[ -z "${bin}" ]]; then
+    echo "error: keys-layer binary not found" >&2
+    exit 1
+  fi
+  local names
+  names="$("${bin}" --list-devices-plain)" || {
+    echo "error: could not list devices (is VirtualHID running? need root)" >&2
+    exit 1
+  }
+  local patterns=()
+  while IFS= read -r line; do
+    [[ -n "${line}" ]] && patterns+=("${line}")
+  done < <(read_device_patterns)
+
+  while IFS= read -r name; do
+    [[ -z "${name}" ]] && continue
+    if name_matches_patterns "${name}" "${patterns[@]+"${patterns[@]}"}"; then
+      printf '%s\ton\n' "${name}"
+    else
+      printf '%s\toff\n' "${name}"
+    fi
+  done <<< "${names}"
+}
+
+cmd_device_enable() {
+  local target="$1"
+  [[ -n "${target}" ]] || { echo "usage: keys-layer-ctl device-enable NAME" >&2; exit 1; }
+  ensure_ready
+  local patterns=()
+  while IFS= read -r line; do
+    [[ -n "${line}" ]] && patterns+=("${line}")
+  done < <(read_device_patterns)
+
+  local pat
+  pat="$(pattern_for_name "${target}")"
+
+  # Empty allowlist means all devices already enabled.
+  if [[ "${#patterns[@]}" -eq 0 ]]; then
+    echo "ok (all keyboards already enabled)"
+    return 0
+  fi
+
+  if name_matches_patterns "${target}" "${patterns[@]+"${patterns[@]}"}"; then
+    echo "ok (already enabled)"
+    return 0
+  fi
+
+  patterns+=("${pat}")
+  write_device_patterns "${patterns[@]}"
+  if is_running; then
+    # Newly matching boards are picked up by hotplug; kickstart to be sure.
+    launchctl kickstart -k "system/${LABEL}" 2>/dev/null || true
+  fi
+  echo "enabled:${pat}"
+}
+
+cmd_device_disable() {
+  local target="$1"
+  [[ -n "${target}" ]] || { echo "usage: keys-layer-ctl device-disable NAME" >&2; exit 1; }
+  ensure_ready
+  local bin names
+  bin="$(resolve_bin)"
+  names="$("${bin}" --list-devices-plain)" || names=""
+
+  local patterns=()
+  while IFS= read -r line; do
+    [[ -n "${line}" ]] && patterns+=("${line}")
+  done < <(read_device_patterns)
+
+  local new_patterns=()
+  if [[ "${#patterns[@]}" -eq 0 ]]; then
+    # Was "all keyboards" → build allowlist of every connected board except target.
+    local name pat
+    while IFS= read -r name; do
+      [[ -z "${name}" ]] && continue
+      if [[ "${name}" == "${target}" ]]; then
+        continue
+      fi
+      # Also skip if target is a substring match of this name or vice versa
+      local tl nl
+      tl="$(printf '%s' "${target}" | tr '[:upper:]' '[:lower:]')"
+      nl="$(printf '%s' "${name}" | tr '[:upper:]' '[:lower:]')"
+      if [[ "${nl}" == *"${tl}"* || "${tl}" == *"${nl}"* ]]; then
+        continue
+      fi
+      pat="$(pattern_for_name "${name}")"
+      new_patterns+=("${pat}")
+    done <<< "${names}"
+  else
+    local p
+    for p in "${patterns[@]}"; do
+      local pl tl
+      pl="$(printf '%s' "${p}" | tr '[:upper:]' '[:lower:]')"
+      tl="$(printf '%s' "${target}" | tr '[:upper:]' '[:lower:]')"
+      # Drop patterns that match this keyboard.
+      if [[ "${tl}" == *"${pl}"* || "${pl}" == *"${tl}"* ]]; then
+        continue
+      fi
+      new_patterns+=("${p}")
+    done
+  fi
+
+  if [[ "${#new_patterns[@]}" -eq 0 ]]; then
+    # Avoid empty allowlist (= all). Use a never-match sentinel? Better keep at
+    # least a placeholder the user can re-enable from. Use disabled-only mode by
+    # writing a pattern that matches nothing useful — actually empty = all.
+    # Write a dummy that won't match real boards.
+    write_device_patterns "__none__"
+  else
+    # Deduplicate
+    local deduped=()
+    local x y seen
+    for x in "${new_patterns[@]}"; do
+      seen=0
+      for y in "${deduped[@]+"${deduped[@]}"}"; do
+        [[ "$x" == "$y" ]] && seen=1 && break
+      done
+      [[ "${seen}" -eq 0 ]] && deduped+=("$x")
+    done
+    write_device_patterns "${deduped[@]}"
+  fi
+
+  # Narrowing the allowlist requires a process restart to release the board.
+  if is_running; then
+    start_daemon
+    wait_until_running || true
+  fi
+  echo "disabled:${target}"
+}
+
+cmd_restart() {
+  if ! is_running; then
+    echo "off"
+    return 0
+  fi
+  start_daemon
+  wait_until_running || true
+  echo "on"
+}
+
 cmd="${1:-}"
 case "${cmd}" in
   status) cmd_status ;;
@@ -240,6 +466,34 @@ case "${cmd}" in
       exit 1
     fi
     cmd_off
+    ;;
+  restart)
+    if [[ "$(id -u)" -ne 0 ]]; then
+      echo "error: 'restart' requires root" >&2
+      exit 1
+    fi
+    cmd_restart
+    ;;
+  devices)
+    if [[ "$(id -u)" -ne 0 ]]; then
+      echo "error: 'devices' requires root (lists via VirtualHID)" >&2
+      exit 1
+    fi
+    cmd_devices
+    ;;
+  device-enable)
+    if [[ "$(id -u)" -ne 0 ]]; then
+      echo "error: 'device-enable' requires root" >&2
+      exit 1
+    fi
+    cmd_device_enable "${2:-}"
+    ;;
+  device-disable)
+    if [[ "$(id -u)" -ne 0 ]]; then
+      echo "error: 'device-disable' requires root" >&2
+      exit 1
+    fi
+    cmd_device_disable "${2:-}"
     ;;
   -h|--help|"")
     usage

@@ -17,3 +17,8 @@ pub fn run(config_path: &Path) -> Result<(), String> {
 pub fn list_devices() -> Result<(), String> {
     driverkit::list_devices()
 }
+
+/// One keyboard name per line (menu bar / automation).
+pub fn list_devices_plain() -> Result<(), String> {
+    driverkit::list_devices_plain()
+}

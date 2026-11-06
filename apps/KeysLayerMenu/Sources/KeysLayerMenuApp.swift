@@ -25,6 +25,7 @@ final class MenuModel: ObservableObject {
   @Published var busy = false
   @Published var launchAtLogin = false
   @Published var needsPrivacyFix = false
+  @Published var keyboards: [KeyboardItem] = []
   @Published var lastError: String?
 
   private var timer: Timer?
@@ -51,7 +52,6 @@ final class MenuModel: ObservableObject {
       if denied {
         lastError =
           "Input Monitoring not active. Enable it for:\n\(remapperPath)\n(not Keys Layer.app), then remapping will restart automatically — or click Fix below."
-        // One automatic restart after privacy may have been granted while running.
         if !didAutoRestartForPrivacy {
           didAutoRestartForPrivacy = true
           applyPrivacyRestart()
@@ -74,6 +74,52 @@ final class MenuModel: ObservableObject {
     }
   }
 
+  func refreshKeyboards() {
+    guard !busy else { return }
+    busy = true
+    lastError = nil
+    Task.detached {
+      do {
+        let items = try DaemonController.listKeyboards()
+        await MainActor.run {
+          self.keyboards = items
+          self.busy = false
+          if items.isEmpty {
+            self.lastError = "No keyboards reported. Is VirtualHID running?"
+          }
+        }
+      } catch {
+        await MainActor.run {
+          self.lastError = error.localizedDescription
+          self.busy = false
+        }
+      }
+    }
+  }
+
+  func setKeyboardEnabled(_ item: KeyboardItem, enabled: Bool) {
+    guard !busy else { return }
+    busy = true
+    lastError = nil
+    let name = item.name
+    Task.detached {
+      do {
+        try DaemonController.setKeyboardEnabled(name: name, enabled: enabled)
+        let items = try DaemonController.listKeyboards()
+        await MainActor.run {
+          self.keyboards = items
+          self.isOn = DaemonController.statusOn()
+          self.busy = false
+        }
+      } catch {
+        await MainActor.run {
+          self.lastError = error.localizedDescription
+          self.busy = false
+        }
+      }
+    }
+  }
+
   func setEnabled(_ enabled: Bool) {
     guard !busy else { return }
     busy = true
@@ -86,12 +132,18 @@ final class MenuModel: ObservableObject {
     Task.detached {
       do {
         try DaemonController.setEnabled(target)
-        // Let the daemon log a session before we check Privacy.
         if target {
           try? await Task.sleep(nanoseconds: 1_800_000_000)
         }
+        let listed: [KeyboardItem]
+        if target {
+          listed = (try? DaemonController.listKeyboards()) ?? []
+        } else {
+          listed = []
+        }
         await MainActor.run {
           self.isOn = DaemonController.statusOn()
+          if target { self.keyboards = listed }
           self.busy = false
           self.refresh()
         }
@@ -105,8 +157,6 @@ final class MenuModel: ObservableObject {
     }
   }
 
-  /// Off → On in one admin prompt path (two privileged calls; user may get 2 dialogs
-  /// unless cached). Prefer calling after Privacy is enabled.
   func applyPrivacyRestart() {
     guard !busy else { return }
     busy = true
@@ -116,7 +166,9 @@ final class MenuModel: ObservableObject {
         try DaemonController.setEnabled(false)
         try DaemonController.setEnabled(true)
         try? await Task.sleep(nanoseconds: 1_500_000_000)
+        let keyboards = (try? DaemonController.listKeyboards()) ?? []
         await MainActor.run {
+          self.keyboards = keyboards
           self.isOn = DaemonController.statusOn()
           self.busy = false
           let denied = DaemonController.currentSessionDeniedPrivacy()
@@ -177,6 +229,17 @@ final class MenuModel: ObservableObject {
   func quit() {
     NSApp.terminate(nil)
   }
+
+  /// Short label for the menu (full name stays the id for ctl).
+  static func shortLabel(for name: String) -> String {
+    if name.localizedCaseInsensitiveContains("Apple Internal") {
+      return "MacBook Keyboard"
+    }
+    if name.count > 36 {
+      return String(name.prefix(33)) + "…"
+    }
+    return name
+  }
 }
 
 struct ContentView: View {
@@ -210,6 +273,31 @@ struct ContentView: View {
         Button("Fix Privacy / Restart Remapping") { model.applyPrivacyRestart() }
           .disabled(model.busy)
       }
+    }
+
+    Divider()
+
+    Text("Keyboards")
+      .font(.caption)
+      .foregroundStyle(.secondary)
+
+    if model.keyboards.isEmpty {
+      Button(model.busy ? "Loading keyboards…" : "Refresh Keyboards…") {
+        model.refreshKeyboards()
+      }
+      .disabled(model.busy)
+    } else {
+      ForEach(model.keyboards) { kb in
+        Toggle(isOn: Binding(
+          get: { kb.enabled },
+          set: { model.setKeyboardEnabled(kb, enabled: $0) }
+        )) {
+          Text(MenuModel.shortLabel(for: kb.name))
+        }
+        .disabled(model.busy)
+      }
+      Button("Refresh Keyboards…") { model.refreshKeyboards() }
+        .disabled(model.busy)
     }
 
     Divider()

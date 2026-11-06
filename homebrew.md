@@ -31,6 +31,7 @@ Stable (versioned) installs are also available once the formula is bumped; prefe
 3. Open **Keys Layer** from **/Applications** (or Spotlight).
 4. Menu bar → **Turn Remapping On** (macOS password once).  
    First On creates `~/.config/keys-layer/config.toml` and the LaunchDaemon plist.
+5. Menu → **Keyboards** → toggle MacBook / external boards on or off (or **Refresh Keyboards…**).
 
 Remapping stays **off** across reboot until you turn it on again. Optional: **Launch Menu at Login** keeps the icon only.
 
@@ -40,6 +41,7 @@ CLI:
 keys-layer-ctl status
 sudo keys-layer-ctl on
 sudo keys-layer-ctl off
+sudo keys-layer-ctl devices
 ```
 
 ---

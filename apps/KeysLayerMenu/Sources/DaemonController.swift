@@ -1,10 +1,16 @@
 import AppKit
 import Foundation
 
-/// Talks to `keys-layer-ctl` (status is unprivileged; on/off need admin).
+struct KeyboardItem: Identifiable, Equatable {
+  var id: String { name }
+  let name: String
+  var enabled: Bool
+}
+
+/// Talks to `keys-layer-ctl` (status is unprivileged; on/off/devices need admin).
 enum DaemonController {
   enum Action: String {
-    case status, on, off
+    case status, on, off, restart, devices
   }
 
   struct Result {
@@ -12,7 +18,6 @@ enum DaemonController {
     let output: String
   }
 
-  /// Remapper binary Privacy must be granted for (not this menu app).
   static func remapperBinaryPath() -> String {
     if let env = ProcessInfo.processInfo.environment["KEYS_LAYER_BIN"], !env.isEmpty {
       return env
@@ -48,20 +53,17 @@ enum DaemonController {
     runUnprivileged(.status).exitCode == 0
   }
 
-  /// True if the latest remapper session logged Input Monitoring denial.
   static func currentSessionDeniedPrivacy() -> Bool {
     let log = "/var/log/keys-layer.log"
     guard let data = try? Data(contentsOf: URL(fileURLWithPath: log)),
           let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1)
     else { return false }
 
-    // Only inspect lines after the last successful start banner.
     let marker = "keys-layer (DriverKit) running"
     let session: String
     if let range = text.range(of: marker, options: .backwards) {
       session = String(text[range.lowerBound...])
     } else {
-      // Fall back to last 8 KiB
       session = String(text.suffix(8192))
     }
     return session.contains("not permitted")
@@ -69,13 +71,36 @@ enum DaemonController {
 
   static func setEnabled(_ enabled: Bool) throws {
     let action: Action = enabled ? .on : .off
-    let r = try runPrivileged(action)
+    let r = try runPrivileged(action.rawValue)
     if r.exitCode != 0 {
       throw ControllerError.commandFailed(action.rawValue, r.output)
     }
   }
 
-  /// Open Privacy panes and put the remapper path on the clipboard.
+  /// Connected keyboards with allowlist on/off (requires admin + VirtualHID).
+  static func listKeyboards() throws -> [KeyboardItem] {
+    let r = try runPrivileged(Action.devices.rawValue)
+    if r.exitCode != 0 {
+      throw ControllerError.commandFailed("devices", r.output)
+    }
+    var items: [KeyboardItem] = []
+    for line in r.output.split(whereSeparator: \.isNewline) {
+      let parts = line.split(separator: "\t", maxSplits: 1).map(String.init)
+      guard parts.count == 2 else { continue }
+      let enabled = parts[1].trimmingCharacters(in: .whitespaces) == "on"
+      items.append(KeyboardItem(name: parts[0], enabled: enabled))
+    }
+    return items
+  }
+
+  static func setKeyboardEnabled(name: String, enabled: Bool) throws {
+    let action = enabled ? "device-enable" : "device-disable"
+    let r = try runPrivileged(action, extraArg: name)
+    if r.exitCode != 0 {
+      throw ControllerError.commandFailed(action, r.output)
+    }
+  }
+
   static func openPrivacyHelp() {
     let path = remapperBinaryPath()
     NSPasteboard.general.clearContents()
@@ -112,9 +137,12 @@ enum DaemonController {
     return Result(exitCode: proc.terminationStatus, output: text)
   }
 
-  private static func runPrivileged(_ action: Action) throws -> Result {
+  private static func runPrivileged(_ action: String, extraArg: String? = nil) throws -> Result {
     let ctl = ctlPath()
-    let shell = "\(shellEscape(ctl)) \(action.rawValue)"
+    var shell = "\(shellEscape(ctl)) \(action)"
+    if let extraArg {
+      shell += " \(shellEscape(extraArg))"
+    }
     let apple = """
     do shell script \(appleString(shell)) with administrator privileges
     """
@@ -129,7 +157,7 @@ enum DaemonController {
       if code == -128 {
         throw ControllerError.cancelled
       }
-      throw ControllerError.commandFailed(action.rawValue, msg)
+      throw ControllerError.commandFailed(action, msg)
     }
     let text = descriptor.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     return Result(exitCode: 0, output: text)

@@ -39,13 +39,19 @@ open "/Applications/Keys Layer.app"
 |------|--------|
 | **Turn Remapping On** | Starts remapping (admin once; first time seeds config + plist) |
 | **Turn Remapping Off** | Stops remapping |
+| **Keyboards** | Lists connected boards (MacBook + externals). Toggle to enable/disable remapping per keyboard. Uses **Refresh Keyboards…** (admin) to load the list; also refreshes after Turn On. |
 | **Launch Menu at Login** | Menu icon at login only — remaps stay off until you turn them on |
 | **Open Config** / **Open Log** | `~/.config/keys-layer/config.toml` / `/var/log/keys-layer.log` |
+
+Disabling a keyboard writes `settings.devices` and restarts remapping so that board is released. Enabling adds it back to the allowlist.
 
 ```bash
 keys-layer-ctl status
 sudo keys-layer-ctl on
 sudo keys-layer-ctl off
+sudo keys-layer-ctl devices
+sudo keys-layer-ctl device-disable "Apple Internal Keyboard / Trackpad"
+sudo keys-layer-ctl device-enable "Apple Internal"
 ```
 
 ---

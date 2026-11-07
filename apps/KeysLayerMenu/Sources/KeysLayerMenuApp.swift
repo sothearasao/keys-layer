@@ -30,12 +30,11 @@ final class MenuModel: ObservableObject {
 
   private var timer: Timer?
   private var didAutoRestartForPrivacy = false
-  private var didLiveScan = false
 
   var remapperPath: String { DaemonController.remapperBinaryPath() }
 
   init() {
-    keyboards = DaemonController.keyboardsFromConfigAndCache()
+    keyboards = DaemonController.listConnectedKeyboards()
     DaemonController.pulseMenuHeartbeat()
     refresh()
     refreshLaunchAtLogin()
@@ -51,9 +50,9 @@ final class MenuModel: ObservableObject {
   func refresh() {
     guard !busy else { return }
     isOn = DaemonController.statusOn()
-    // Refresh from live connected_keyboards / config so newly plugged boards appear.
-    let latest = DaemonController.keyboardsFromConfigAndCache()
-    if keyboards.isEmpty || keyboards.map(\.id) != latest.map(\.id)
+    // Live connected only — never the config allowlist.
+    let latest = DaemonController.listConnectedKeyboards()
+    if keyboards.map(\.id) != latest.map(\.id)
       || keyboards.map(\.enabled) != latest.map(\.enabled)
     {
       keyboards = latest
@@ -86,29 +85,15 @@ final class MenuModel: ObservableObject {
     }
   }
 
-  func refreshKeyboards(hardwareScan: Bool = false) {
+  func refreshKeyboards() {
     guard !busy else { return }
-    busy = true
-    lastError = nil
-    Task.detached {
-      do {
-        // Config refresh is free; hardware Scan asks for admin once.
-        let items = try DaemonController.listKeyboards(preferHardware: hardwareScan)
-        await MainActor.run {
-          self.keyboards = items
-          self.didLiveScan = hardwareScan && !items.isEmpty
-          self.busy = false
-          if items.isEmpty {
-            self.lastError = "No keyboards in config yet."
-          }
-        }
-      } catch {
-        await MainActor.run {
-          self.keyboards = DaemonController.keyboardsFromConfigAndCache()
-          self.lastError = error.localizedDescription
-          self.busy = false
-        }
-      }
+    keyboards = DaemonController.listConnectedKeyboards()
+    if !isOn {
+      lastError = "Turn Remapping On to list plugged-in keyboards."
+    } else if keyboards.isEmpty {
+      lastError = "Waiting for connected keyboards… (remapper publishes every few seconds)"
+    } else {
+      lastError = nil
     }
   }
 
@@ -127,7 +112,7 @@ final class MenuModel: ObservableObject {
         // No admin — writes ~/.config; remapper hot-reloads as root.
         try DaemonController.setKeyboardEnabled(name: name, enabled: enabled)
         try? await Task.sleep(nanoseconds: 900_000_000)
-        let items = DaemonController.keyboardsFromConfigAndCache()
+        let items = DaemonController.listConnectedKeyboards()
         await MainActor.run {
           self.keyboards = items
           self.isOn = DaemonController.statusOn()
@@ -138,7 +123,7 @@ final class MenuModel: ObservableObject {
         }
       } catch {
         await MainActor.run {
-          self.keyboards = DaemonController.keyboardsFromConfigAndCache()
+          self.keyboards = DaemonController.listConnectedKeyboards()
           self.lastError = error.localizedDescription
           self.busy = false
         }
@@ -165,14 +150,13 @@ final class MenuModel: ObservableObject {
         try DaemonController.setEnabled(target)
         if target {
           DaemonController.pulseMenuHeartbeat()
-          try? await Task.sleep(nanoseconds: 1_800_000_000)
+          // Wait for remapper to publish live HID names.
+          try? await Task.sleep(nanoseconds: 2_500_000_000)
         }
-        // Avoid a second admin prompt right after Turn On/Off.
-        let listed = DaemonController.keyboardsFromConfigAndCache()
+        let listed = DaemonController.listConnectedKeyboards()
         await MainActor.run {
           self.isOn = DaemonController.statusOn()
           self.keyboards = listed
-          self.didLiveScan = target && !listed.isEmpty
           self.busy = false
           self.refresh()
         }
@@ -195,7 +179,7 @@ final class MenuModel: ObservableObject {
         try DaemonController.setEnabled(false)
         try DaemonController.setEnabled(true)
         try? await Task.sleep(nanoseconds: 1_500_000_000)
-        let keyboards = DaemonController.keyboardsFromConfigAndCache()
+        let keyboards = DaemonController.listConnectedKeyboards()
         await MainActor.run {
           self.keyboards = keyboards
           self.isOn = DaemonController.statusOn()
@@ -313,22 +297,26 @@ struct ContentView: View {
 
       HStack(alignment: .firstTextBaseline) {
         VStack(alignment: .leading, spacing: 2) {
-          Text("Keyboards")
+          Text("Connected")
             .font(.headline)
-          Text("Off = muted completely")
+          Text("Live boards only · Off = muted")
             .font(.caption2)
             .foregroundStyle(.secondary)
         }
         Spacer(minLength: 8)
         Button(model.busy ? "…" : "Refresh") {
-          model.refreshKeyboards(hardwareScan: false)
+          model.refreshKeyboards()
         }
         .disabled(model.busy)
         .controlSize(.small)
       }
 
       if model.keyboards.isEmpty {
-        Text("No keyboards yet — click Scan.")
+        Text(
+          model.isOn
+            ? "No plugged-in keyboards reported yet…"
+            : "Turn On to list plugged-in keyboards."
+        )
           .font(.caption)
           .foregroundStyle(.secondary)
           .frame(maxWidth: .infinity, alignment: .leading)
@@ -393,9 +381,7 @@ struct ContentView: View {
     .padding(14)
     .frame(width: 320)
     .onAppear {
-      if model.keyboards.isEmpty {
-        model.keyboards = DaemonController.keyboardsFromConfigAndCache()
-      }
+      model.keyboards = DaemonController.listConnectedKeyboards()
     }
   }
 }

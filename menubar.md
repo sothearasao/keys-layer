@@ -40,7 +40,7 @@ open "/Applications/Keys Layer.app"
 | **Turn On** | Starts remapping (admin once; first time seeds config + plist) |
 | **Turn Off** | Stops remapping |
 | **Quit & Stop Remapping** | Quits the menu **and** stops the remapper (heartbeat) |
-| **Keyboards** | Switches mute/unmute each board (**Off** = no keys reach macOS). Writes `disabled_devices` in your config — **no admin password**. Remapper hot-reloads. Admin is only needed for **Turn On / Turn Off**. |
+| **Connected** | Lists **currently plugged-in** keyboards only (not your config allowlist). Toggle **Off** to mute that board completely. Writes `disabled_devices` — **no admin password**. `settings.devices` in config still controls which boards get remapped. |
 | **Launch Menu at Login** | Menu icon at login only — remaps stay off until you turn them on |
 | **Open Config** / **Open Log** | `~/.config/keys-layer/config.toml` / `/var/log/keys-layer.log` |
 

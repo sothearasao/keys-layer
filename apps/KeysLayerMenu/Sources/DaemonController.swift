@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 
 struct KeyboardItem: Identifiable, Equatable {
-  /// Stable id so "Apple Internal" and "Apple Internal Keyboard / Trackpad" collapse.
+  /// Stable id so short patterns and full product names collapse.
   var id: String { Self.canonicalKey(name) }
   let name: String
   /// `true` = keyboard produces input (remapped). `false` = muted completely.
@@ -25,6 +25,7 @@ struct KeyboardItem: Identifiable, Equatable {
 
 /// Talks to `keys-layer-ctl`.
 /// Turn On/Off need admin once. Mute/unmute writes user config (no password).
+/// Keyboard list = live connected only (never the config allowlist).
 enum DaemonController {
   enum Action: String {
     case status, on, off, restart, devices
@@ -34,8 +35,6 @@ enum DaemonController {
     let exitCode: Int32
     let output: String
   }
-
-  private static let cachedNamesKey = "keysLayer.cachedKeyboardNames"
 
   static func remapperBinaryPath() -> String {
     if let env = ProcessInfo.processInfo.environment["KEYS_LAYER_BIN"], !env.isEmpty {
@@ -87,6 +86,10 @@ enum DaemonController {
     try? FileManager.default.removeItem(at: url)
   }
 
+  static func clearConnectedKeyboardsFile() {
+    try? FileManager.default.removeItem(at: connectedKeyboardsURL())
+  }
+
   private static func configDir() -> URL {
     FileManager.default.homeDirectoryForCurrentUser
       .appendingPathComponent(".config/keys-layer")
@@ -115,26 +118,24 @@ enum DaemonController {
     if r.exitCode != 0 {
       throw ControllerError.commandFailed(action, r.output)
     }
+    if !enabled {
+      clearConnectedKeyboardsFile()
+    }
   }
 
-  /// Prefer cached/config list (no password). Hardware scan still needs admin.
-  static func listKeyboards(preferHardware: Bool = false) throws -> [KeyboardItem] {
-    if preferHardware {
-      let r = try runPrivileged("devices")
-      if r.exitCode != 0 {
-        throw ControllerError.commandFailed("devices", r.output)
-      }
-      var items: [KeyboardItem] = []
-      for line in r.output.split(whereSeparator: \.isNewline) {
-        let parts = line.split(separator: "\t", maxSplits: 1).map(String.init)
-        guard parts.count == 2 else { continue }
-        let enabled = parts[1].trimmingCharacters(in: .whitespaces) == "on"
-        items.append(KeyboardItem(name: parts[0], enabled: enabled))
-      }
-      rememberNames(items.map(\.name))
-      if !items.isEmpty { return items }
+  /// Live connected keyboards only (from remapper-published file).
+  static func listConnectedKeyboards() -> [KeyboardItem] {
+    // Stale file from an old session must not pretend boards are plugged in.
+    guard statusOn() else { return [] }
+    guard connectedKeyboardsFileIsFresh() else { return [] }
+
+    let live = dedupeDeviceNames(readConnectedKeyboardsFile())
+    let muted = readStringArray(key: "disabled_devices")
+    return live.map { name in
+      let isMuted = muted.contains { KeyboardItem.sameDevice(name, $0) }
+      return KeyboardItem(name: name, enabled: !isMuted)
     }
-    return keyboardsFromConfigAndCache()
+    .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
   }
 
   /// Mute/unmute via user config — no admin prompt. Daemon hot-reloads.
@@ -144,52 +145,6 @@ enum DaemonController {
     if r.exitCode != 0 {
       throw ControllerError.commandFailed(action, r.output)
     }
-  }
-
-  static func keyboardsFromConfigAndCache() -> [KeyboardItem] {
-    let remap = readStringArray(key: "devices")
-    let muted = readStringArray(key: "disabled_devices")
-    // Live list written by the remapper (no admin needed to read).
-    let live = readConnectedKeyboardsFile()
-
-    // When the daemon published a live list, show only what's plugged in now.
-    var candidates: [String]
-    if !live.isEmpty {
-      candidates = live
-    } else {
-      candidates = rememberedNames()
-      for p in remap { candidates.append(displayName(forPattern: p)) }
-      for p in muted { candidates.append(displayName(forPattern: p)) }
-    }
-    if candidates.isEmpty {
-      candidates = ["Apple Internal Keyboard / Trackpad"]
-    }
-
-    let names = dedupeDeviceNames(candidates)
-    rememberNames(names)
-
-    return names.map { name in
-      let isMuted = muted.contains { KeyboardItem.sameDevice(name, $0) }
-      return KeyboardItem(name: name, enabled: !isMuted)
-    }
-    .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-  }
-
-  /// Keep one row per physical board; prefer the longer/full product name.
-  private static func dedupeDeviceNames(_ raw: [String]) -> [String] {
-    var out: [String] = []
-    for name in raw {
-      let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-      guard !trimmed.isEmpty else { continue }
-      if let idx = out.firstIndex(where: { KeyboardItem.sameDevice($0, trimmed) }) {
-        if trimmed.count > out[idx].count {
-          out[idx] = trimmed
-        }
-      } else {
-        out.append(trimmed)
-      }
-    }
-    return out
   }
 
   static func openPrivacyHelp() {
@@ -216,6 +171,15 @@ enum DaemonController {
 
   private static func connectedKeyboardsURL() -> URL {
     configDir().appendingPathComponent("connected_keyboards")
+  }
+
+  /// Remapper rewrites this every ~5s while running.
+  private static func connectedKeyboardsFileIsFresh() -> Bool {
+    let path = connectedKeyboardsURL().path
+    guard let attrs = try? FileManager.default.attributesOfItem(atPath: path),
+          let modified = attrs[.modificationDate] as? Date
+    else { return false }
+    return Date().timeIntervalSince(modified) < 20
   }
 
   private static func readConnectedKeyboardsFile() -> [String] {
@@ -257,20 +221,20 @@ enum DaemonController {
     return out
   }
 
-  private static func displayName(forPattern pattern: String) -> String {
-    if pattern.localizedCaseInsensitiveContains("Apple Internal") {
-      return "Apple Internal Keyboard / Trackpad"
+  private static func dedupeDeviceNames(_ raw: [String]) -> [String] {
+    var out: [String] = []
+    for name in raw {
+      let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !trimmed.isEmpty else { continue }
+      if let idx = out.firstIndex(where: { KeyboardItem.sameDevice($0, trimmed) }) {
+        if trimmed.count > out[idx].count {
+          out[idx] = trimmed
+        }
+      } else {
+        out.append(trimmed)
+      }
     }
-    return pattern
-  }
-
-  private static func rememberedNames() -> [String] {
-    UserDefaults.standard.stringArray(forKey: cachedNamesKey) ?? []
-  }
-
-  private static func rememberNames(_ names: [String]) {
-    guard !names.isEmpty else { return }
-    UserDefaults.standard.set(names, forKey: cachedNamesKey)
+    return out
   }
 
   private static func runCtl(_ action: String, extraArg: String? = nil) -> Result {
@@ -301,7 +265,6 @@ enum DaemonController {
     if let extraArg {
       inner += " \(shellEscape(extraArg))"
     }
-    // bash -lc keeps quoting reliable under AppleScript admin.
     let shell = "/bin/bash -lc \(shellEscape(inner))"
     let apple = """
     do shell script \(appleString(shell)) with administrator privileges

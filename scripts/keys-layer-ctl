@@ -160,6 +160,8 @@ cmd_off() {
   pkill -9 -x keys-layer 2>/dev/null || true
   pkill -9 -f '/keys-layer( |$)' 2>/dev/null || true
   sleep 0.2
+  # Drop stale live list so the menu never shows config/old boards.
+  rm -f "$(resolve_home)/.config/keys-layer/connected_keyboards" 2>/dev/null || true
   if is_running; then
     echo "error: keys-layer still running" >&2
     pgrep -lf keys-layer >&2 || true

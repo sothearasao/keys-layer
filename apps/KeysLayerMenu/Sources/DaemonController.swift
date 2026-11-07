@@ -129,11 +129,18 @@ enum DaemonController {
   static func keyboardsFromConfigAndCache() -> [KeyboardItem] {
     let remap = readStringArray(key: "devices")
     let muted = readStringArray(key: "disabled_devices")
+    // Live list written by the remapper (no admin needed to read).
+    let live = readConnectedKeyboardsFile()
 
-    // Merge cache + config patterns, then collapse aliases (short pattern vs full name).
-    var candidates: [String] = rememberedNames()
-    for p in remap { candidates.append(displayName(forPattern: p)) }
-    for p in muted { candidates.append(displayName(forPattern: p)) }
+    // When the daemon published a live list, show only what's plugged in now.
+    var candidates: [String]
+    if !live.isEmpty {
+      candidates = live
+    } else {
+      candidates = rememberedNames()
+      for p in remap { candidates.append(displayName(forPattern: p)) }
+      for p in muted { candidates.append(displayName(forPattern: p)) }
+    }
     if candidates.isEmpty {
       candidates = ["Apple Internal Keyboard / Trackpad"]
     }
@@ -188,9 +195,25 @@ enum DaemonController {
       .appendingPathComponent(".config/keys-layer/config.toml")
   }
 
+  private static func connectedKeyboardsURL() -> URL {
+    FileManager.default.homeDirectoryForCurrentUser
+      .appendingPathComponent(".config/keys-layer/connected_keyboards")
+  }
+
+  private static func readConnectedKeyboardsFile() -> [String] {
+    guard let text = try? String(contentsOf: connectedKeyboardsURL(), encoding: .utf8) else {
+      return []
+    }
+    return text
+      .split(whereSeparator: \.isNewline)
+      .map { $0.trimmingCharacters(in: .whitespaces) }
+      .filter { !$0.isEmpty }
+  }
+
   private static func readStringArray(key: String) -> [String] {
     guard let text = try? String(contentsOf: configURL(), encoding: .utf8) else { return [] }
-    let pattern = #"\#(NSRegularExpression.escapedPattern(for: key))\s*=\s*\[(.*?)\]"#
+    // Anchor at line start so `devices` does not match inside `disabled_devices`.
+    let pattern = #"(?m)^\#(NSRegularExpression.escapedPattern(for: key))\s*=\s*\[(.*?)\]"#
     guard let regex = try? NSRegularExpression(
       pattern: pattern,
       options: [.dotMatchesLineSeparators]

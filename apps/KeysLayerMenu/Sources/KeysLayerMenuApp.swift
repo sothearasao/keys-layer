@@ -48,8 +48,12 @@ final class MenuModel: ObservableObject {
   func refresh() {
     guard !busy else { return }
     isOn = DaemonController.statusOn()
-    if keyboards.isEmpty {
-      keyboards = DaemonController.keyboardsFromConfigAndCache()
+    // Refresh from live connected_keyboards / config so newly plugged boards appear.
+    let latest = DaemonController.keyboardsFromConfigAndCache()
+    if keyboards.isEmpty || keyboards.map(\.id) != latest.map(\.id)
+      || keyboards.map(\.enabled) != latest.map(\.enabled)
+    {
+      keyboards = latest
     }
     if isOn {
       let denied = DaemonController.currentSessionDeniedPrivacy()

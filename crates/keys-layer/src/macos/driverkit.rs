@@ -8,7 +8,8 @@
 //! - Input Monitoring + Accessibility for the binary
 
 use std::collections::HashSet;
-use std::path::Path;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -180,6 +181,7 @@ pub fn run(config_path: &Path) -> Result<(), String> {
     let (seized, initial_hashes) = seize_devices(&seize_patterns)?;
     eprintln!("seized keyboards: {}", seized.join(", "));
     let seized_hashes = Arc::new(Mutex::new(initial_hashes));
+    publish_connected_keyboards(config_path);
 
     if !grab() {
         return Err(
@@ -223,6 +225,7 @@ pub fn run(config_path: &Path) -> Result<(), String> {
     });
 
     start_sink_watchdog();
+    start_connected_publisher(config_path.to_path_buf());
     start_hotplug_watcher(
         Arc::clone(&devices),
         Arc::clone(&disabled_devices),
@@ -230,6 +233,7 @@ pub fn run(config_path: &Path) -> Result<(), String> {
         Arc::clone(&f_row_media_devices),
         Arc::clone(&f_row_media_hashes),
         Arc::clone(&seized_hashes),
+        config_path.to_path_buf(),
     );
 
     reload::start(
@@ -681,6 +685,48 @@ fn seize_devices(patterns: &[String]) -> Result<(Vec<String>, HashSet<u64>), Str
     Ok((seized_names, hashes))
 }
 
+/// Publish connected keyboard names for the menu bar (no admin to read).
+fn publish_connected_keyboards(config_path: &Path) {
+    let names = match connected_keyboard_names() {
+        Ok(n) => n,
+        Err(_) => return,
+    };
+    let Some(dir) = config_path.parent() else {
+        return;
+    };
+    let path = dir.join("connected_keyboards");
+    let body = if names.is_empty() {
+        String::new()
+    } else {
+        format!("{}\n", names.join("\n"))
+    };
+    if fs::write(&path, &body).is_err() {
+        return;
+    }
+    // Match config.toml ownership so the menu (user) can always read it.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        if let Ok(meta) = fs::metadata(config_path) {
+            let uid = meta.uid();
+            let gid = meta.gid();
+            if let Ok(c_path) = std::ffi::CString::new(path.as_os_str().as_encoded_bytes()) {
+                unsafe {
+                    libc::chown(c_path.as_ptr(), uid, gid);
+                }
+            }
+            let _ = fs::set_permissions(&path, PermissionsExt::from_mode(0o644));
+        }
+    }
+}
+
+fn start_connected_publisher(config_path: PathBuf) {
+    thread::spawn(move || loop {
+        publish_connected_keyboards(&config_path);
+        thread::sleep(Duration::from_secs(2));
+    });
+}
+
 /// Watch for newly connected keyboards and reseize without restarting the process.
 fn start_hotplug_watcher(
     devices: Arc<Mutex<Vec<String>>>,
@@ -689,6 +735,7 @@ fn start_hotplug_watcher(
     f_row_media_devices: Arc<Mutex<Vec<String>>>,
     f_row_media_hashes: Arc<Mutex<HashSet<u64>>>,
     seized_hashes: Arc<Mutex<HashSet<u64>>>,
+    config_path: PathBuf,
 ) {
     thread::spawn(move || {
         // Track by product name so hash churn / VirtualHID rebuilds do not loop.
@@ -711,6 +758,7 @@ fn start_hotplug_watcher(
 
             *disabled_hashes.lock().expect("disabled hashes") =
                 device_hashes_matching(&muted);
+            publish_connected_keyboards(&config_path);
 
             let newcomers: Vec<(u64, String)> = matched
                 .iter()

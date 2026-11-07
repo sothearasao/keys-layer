@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  Menu-bar controlled remapping:
+  Menu-bar owned remapping:
   - RunAtLoad=false → does NOT start at login/reboot (Turn On from the app)
-  - KeepAlive=true  → if the process exits after sleep/wake recovery, launchd
-    restarts it while the job is still loaded (until Turn Remapping Off / bootout)
+  - KeepAlive=false → when keys-layer exits (menu quit / heartbeat lost), stay off
+  - Process watches ~/.config/keys-layer/menu.heartbeat and exits if the menu is gone
 -->
 <plist version="1.0">
 <dict>
@@ -18,7 +18,7 @@
   <key>RunAtLoad</key>
   <false/>
   <key>KeepAlive</key>
-  <true/>
+  <false/>
   <key>ThrottleInterval</key>
   <integer>10</integer>
   <key>StandardOutPath</key>

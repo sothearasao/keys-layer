@@ -36,10 +36,13 @@ final class MenuModel: ObservableObject {
 
   init() {
     keyboards = DaemonController.keyboardsFromConfigAndCache()
+    DaemonController.pulseMenuHeartbeat()
     refresh()
     refreshLaunchAtLogin()
     timer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
       Task { @MainActor in
+        // Remapper watches this file; quitting the menu stops remapping.
+        DaemonController.pulseMenuHeartbeat()
         self?.refresh()
       }
     }
@@ -154,8 +157,14 @@ final class MenuModel: ObservableObject {
     let target = enabled
     Task.detached {
       do {
+        if target {
+          DaemonController.pulseMenuHeartbeat()
+        } else {
+          DaemonController.clearMenuHeartbeat()
+        }
         try DaemonController.setEnabled(target)
         if target {
+          DaemonController.pulseMenuHeartbeat()
           try? await Task.sleep(nanoseconds: 1_800_000_000)
         }
         // Avoid a second admin prompt right after Turn On/Off.
@@ -247,7 +256,20 @@ final class MenuModel: ObservableObject {
   }
 
   func quit() {
-    NSApp.terminate(nil)
+    // Drop heartbeat first so the remapper releases keyboards and exits
+    // without needing another admin prompt.
+    DaemonController.clearMenuHeartbeat()
+    lastError = "Stopping remapping…"
+    Task.detached {
+      // Give the daemon a moment to notice; then force-off if still up.
+      try? await Task.sleep(nanoseconds: 2_500_000_000)
+      if DaemonController.statusOn() {
+        try? DaemonController.setEnabled(false)
+      }
+      await MainActor.run {
+        NSApp.terminate(nil)
+      }
+    }
   }
 
   static func shortLabel(for name: String) -> String {
@@ -357,7 +379,7 @@ struct ContentView: View {
         Button("Config") { model.openConfig() }
         Button("Log") { model.openLog() }
         Spacer()
-        Button("Quit") { model.quit() }
+        Button("Quit & Stop Remapping") { model.quit() }
       }
 
       if let err = model.lastError, !err.isEmpty {

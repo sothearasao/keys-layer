@@ -225,6 +225,7 @@ pub fn run(config_path: &Path) -> Result<(), String> {
     });
 
     start_sink_watchdog();
+    start_menu_heartbeat_watch(config_path.to_path_buf());
     start_connected_publisher(config_path.to_path_buf());
     start_hotplug_watcher(
         Arc::clone(&devices),
@@ -276,8 +277,7 @@ pub fn run(config_path: &Path) -> Result<(), String> {
                     _ => "sink-loss",
                 };
                 if let Err(err) = recover_input_after_release(ctx) {
-                    // Never exit on wake/hotplug flaps — KeepAlive=false would leave
-                    // remapping permanently off until the menu Turn On again.
+                    // Stay in-process and retry — do not exit (menu owns lifecycle).
                     eprintln!("{err} — retrying (keyboards stay released until VirtualHID is stable)");
                     thread::sleep(Duration::from_secs(5));
                     SINK_RECOVER.store(true, Ordering::SeqCst);
@@ -294,7 +294,9 @@ pub fn run(config_path: &Path) -> Result<(), String> {
             continue;
         }
 
-        if SINK_RECOVER.load(Ordering::SeqCst) || !is_sink_ready() {
+        // Do NOT call is_sink_ready() on every key — Karabiner logs each check and
+        // the IPC stalls typing (lag / stuck keys). The watchdog sets SINK_RECOVER.
+        if SINK_RECOVER.load(Ordering::SeqCst) {
             release_for_recovery(
                 "virtual keyboard sink lost — releasing physical keyboards \
                  so the Mac stays usable (will reseize when VirtualHID returns)",
@@ -723,7 +725,48 @@ fn publish_connected_keyboards(config_path: &Path) {
 fn start_connected_publisher(config_path: PathBuf) {
     thread::spawn(move || loop {
         publish_connected_keyboards(&config_path);
-        thread::sleep(Duration::from_secs(2));
+        thread::sleep(Duration::from_secs(5));
+    });
+}
+
+/// Exit when the menu bar app stops refreshing `menu.heartbeat` (quit / crash).
+/// Gives a short grace period after start so Turn On can finish.
+fn start_menu_heartbeat_watch(config_path: PathBuf) {
+    thread::spawn(move || {
+        let path = match config_path.parent() {
+            Some(dir) => dir.join("menu.heartbeat"),
+            None => return,
+        };
+        let started = Instant::now();
+        const GRACE: Duration = Duration::from_secs(45);
+        const MAX_AGE: u64 = 15;
+        loop {
+            thread::sleep(Duration::from_secs(2));
+            if started.elapsed() < GRACE {
+                continue;
+            }
+            let Ok(text) = fs::read_to_string(&path) else {
+                eprintln!(
+                    "menu heartbeat missing — releasing keyboards and exiting \
+                     (open Keys Layer and Turn On to remap again)"
+                );
+                release();
+                std::process::exit(0);
+            };
+            let ts: u64 = text.trim().parse().unwrap_or(0);
+            let now = SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            if now.saturating_sub(ts) > MAX_AGE {
+                eprintln!(
+                    "menu heartbeat stale ({MAX_AGE}s) — releasing keyboards and exiting \
+                     (menu quit or crashed)"
+                );
+                release();
+                std::process::exit(0);
+            }
+        }
     });
 }
 

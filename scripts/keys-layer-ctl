@@ -204,6 +204,15 @@ wait_until_running() {
 
 cmd_on() {
   ensure_ready
+  # Prevent multi-GB logs (is_sink_ready spam from older builds).
+  if [[ -f /var/log/keys-layer.log ]]; then
+    local sz
+    sz="$(wc -c < /var/log/keys-layer.log 2>/dev/null || echo 0)"
+    if [[ "${sz}" -gt 5000000 ]]; then
+      : > /var/log/keys-layer.log 2>/dev/null || true
+      echo "truncated oversized /var/log/keys-layer.log" >&2
+    fi
+  fi
   start_daemon
   if ! wait_until_running; then
     echo "warning: LaunchDaemon loaded but keys-layer process not seen yet" >&2

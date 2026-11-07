@@ -72,6 +72,26 @@ enum DaemonController {
     runCtl("status").exitCode == 0
   }
 
+  /// Keep the remapper alive — it exits if this file goes stale (menu quit).
+  static func pulseMenuHeartbeat() {
+    let url = configDir().appendingPathComponent("menu.heartbeat")
+    try? FileManager.default.createDirectory(
+      at: configDir(), withIntermediateDirectories: true
+    )
+    let ts = String(Int(Date().timeIntervalSince1970))
+    try? ts.write(to: url, atomically: true, encoding: .utf8)
+  }
+
+  static func clearMenuHeartbeat() {
+    let url = configDir().appendingPathComponent("menu.heartbeat")
+    try? FileManager.default.removeItem(at: url)
+  }
+
+  private static func configDir() -> URL {
+    FileManager.default.homeDirectoryForCurrentUser
+      .appendingPathComponent(".config/keys-layer")
+  }
+
   static func currentSessionDeniedPrivacy() -> Bool {
     let log = "/var/log/keys-layer.log"
     guard let data = try? Data(contentsOf: URL(fileURLWithPath: log)),
@@ -191,13 +211,11 @@ enum DaemonController {
   }
 
   private static func configURL() -> URL {
-    FileManager.default.homeDirectoryForCurrentUser
-      .appendingPathComponent(".config/keys-layer/config.toml")
+    configDir().appendingPathComponent("config.toml")
   }
 
   private static func connectedKeyboardsURL() -> URL {
-    FileManager.default.homeDirectoryForCurrentUser
-      .appendingPathComponent(".config/keys-layer/connected_keyboards")
+    configDir().appendingPathComponent("connected_keyboards")
   }
 
   private static func readConnectedKeyboardsFile() -> [String] {

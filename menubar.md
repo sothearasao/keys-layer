@@ -1,6 +1,6 @@
 # Menu bar toggle (macOS)
 
-Remapping is **off by default** (does not start at login/reboot). Use **Keys Layer.app** in `/Applications` to turn it on or off. While On, it **stays on across sleep/wake** (recovery retries; LaunchDaemon KeepAlive restarts if the process exits).
+Remapping is **owned by the menu app**. It is **off by default** (does not start at login/reboot). **Turn On** starts remapping; **Quit & Stop Remapping** (or closing the menu) stops it — remapping does not keep running in the background after quit. Sleep/wake recovery stays in-process while the menu is open.
 
 Related: [homebrew](./homebrew.md) · [installation](./installation.md) · [prerequisite](./prerequisite.md)
 
@@ -37,8 +37,9 @@ open "/Applications/Keys Layer.app"
 
 | Item | Action |
 |------|--------|
-| **Turn Remapping On** | Starts remapping (admin once; first time seeds config + plist) |
-| **Turn Remapping Off** | Stops remapping |
+| **Turn On** | Starts remapping (admin once; first time seeds config + plist) |
+| **Turn Off** | Stops remapping |
+| **Quit & Stop Remapping** | Quits the menu **and** stops the remapper (heartbeat) |
 | **Keyboards** | Switches mute/unmute each board (**Off** = no keys reach macOS). Writes `disabled_devices` in your config — **no admin password**. Remapper hot-reloads. Admin is only needed for **Turn On / Turn Off**. |
 | **Launch Menu at Login** | Menu icon at login only — remaps stay off until you turn them on |
 | **Open Config** / **Open Log** | `~/.config/keys-layer/config.toml` / `/var/log/keys-layer.log` |

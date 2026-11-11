@@ -2,18 +2,19 @@
 #
 #   brew tap sothearasao/keys-layer https://github.com/sothearasao/keys-layer.git
 #   brew trust sothearasao/keys-layer
-#   brew install --HEAD sothearasao/keys-layer/keys-layer
+#   brew install sothearasao/keys-layer/keys-layer
+#   # or, for unreleased main: brew install --HEAD sothearasao/keys-layer/keys-layer
 #
 # After install: grant Privacy, open Keys Layer from /Applications, Turn On.
 
 class KeysLayer < Formula
   desc "Hold-to-layer keyboard remapper for macOS (Karabiner VirtualHID)"
   homepage "https://github.com/sothearasao/keys-layer"
-  # install() copies scripts/keys-layer-emergency-stop.sh from this archive.
-  # Keep url on a snapshot that actually contains that file (v0.1.3 / v0.1.4 do not).
-  url "https://github.com/sothearasao/keys-layer/archive/499a4a599e16fd6675f40c56b132ad48c570ed58.tar.gz"
-  sha256 "3b66adc95693a262bbbcc7258fdb930df84bf70d5e8090e4d0818ea5f16d12dc"
-  version "0.1.6"
+  # Stable snapshot of main (menu, live keyboards, logout/login). Not an old tag:
+  # v0.1.3 / v0.1.4 archives are missing keys-layer-emergency-stop.sh.
+  url "https://github.com/sothearasao/keys-layer/archive/3de960bc1fba24ec352e6fa0a1285e06fbf16367.tar.gz"
+  sha256 "208bdfdebff8649946d3566f745a7abd63c3f40a6fd1fe6bfc53f92823309874"
+  version "0.1.7"
   license "MIT"
   head "https://github.com/sothearasao/keys-layer.git", branch: "main"
 

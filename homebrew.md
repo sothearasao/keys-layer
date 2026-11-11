@@ -11,14 +11,18 @@ Related: [quickstart](./quickstart.md) · [prerequisite](./prerequisite.md) · [
 ```bash
 brew tap sothearasao/keys-layer https://github.com/sothearasao/keys-layer.git
 brew trust sothearasao/keys-layer
-brew install --HEAD sothearasao/keys-layer/keys-layer
+brew install sothearasao/keys-layer/keys-layer
 ```
 
-Homebrew builds the remapper + **Keys Layer.app**, then copies the app to:
+That installs the current stable formula (**0.1.7**: menu bar, live connected keyboards, logout/login). Homebrew builds the remapper + **Keys Layer.app**, then copies the app to:
 
 `/Applications/Keys Layer.app`
 
-Stable (versioned) installs are also available once the formula is bumped; prefer `--HEAD` for the latest menu-bar flow.
+For unreleased `main` after 0.1.7:
+
+```bash
+brew install --HEAD sothearasao/keys-layer/keys-layer
+```
 
 ---
 

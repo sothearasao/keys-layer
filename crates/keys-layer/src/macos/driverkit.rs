@@ -179,18 +179,13 @@ pub fn run(config_path: &Path) -> Result<(), String> {
 
     let seize_patterns = seize_pattern_list(&device_patterns, &disabled_patterns);
 
-    // Logout/login restarts the VirtualHID *user* daemon after this system
-    // LaunchDaemon. Never seize keyboards until the sink is up, and never exit
-    // just because it is late — exiting left remapping dead until a manual Turn On.
+    // List plugged-in boards for the menu even if the virtual keyboard is still
+    // coming up. fetch_devices does not need the sink.
+    start_connected_publisher(config_path.to_path_buf());
+
+    // register_device must happen before grab(). grab() is what starts the
+    // VirtualHID client — is_sink_ready() stays false until that client connects.
     let (seized, initial_hashes) = loop {
-        if !wait_for_sink(Duration::from_secs(5)) {
-            eprintln!(
-                "waiting for VirtualHID sink before seizing keyboards \
-                 (normal for a few seconds after login)…"
-            );
-            thread::sleep(Duration::from_secs(2));
-            continue;
-        }
         match seize_devices(&seize_patterns) {
             Ok(seized) => break seized,
             Err(err) => {
@@ -201,7 +196,6 @@ pub fn run(config_path: &Path) -> Result<(), String> {
     };
     eprintln!("seized keyboards: {}", seized.join(", "));
     let seized_hashes = Arc::new(Mutex::new(initial_hashes));
-    publish_connected_keyboards(config_path);
 
     if !grab() {
         release();
@@ -220,12 +214,16 @@ pub fn run(config_path: &Path) -> Result<(), String> {
     }
     let _guard = Guard;
 
-    if !is_sink_ready() {
-        eprintln!("sink dropped during grab — releasing and recovering in-process");
+    // Ready callback is async. If VirtualHID is late (login), release input and
+    // let the main loop reseize — do not exit, and do not wait before grab().
+    if wait_for_sink(Duration::from_secs(20)) {
+        INPUT_SEIZED.store(true, Ordering::SeqCst);
+    } else {
+        eprintln!(
+            "VirtualHID sink not ready after grab — releasing keyboards and retrying"
+        );
         release_input_only();
         SINK_RECOVER.store(true, Ordering::SeqCst);
-    } else {
-        INPUT_SEIZED.store(true, Ordering::SeqCst);
     }
 
     let engine_tick = Arc::clone(&engine);
@@ -241,7 +239,6 @@ pub fn run(config_path: &Path) -> Result<(), String> {
     });
 
     start_sink_watchdog();
-    start_connected_publisher(config_path.to_path_buf());
     start_hotplug_watcher(
         Arc::clone(&devices),
         Arc::clone(&disabled_devices),

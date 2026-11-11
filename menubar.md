@@ -1,6 +1,6 @@
 # Menu bar toggle (macOS)
 
-Remapping is **owned by the menu app**. It is **off by default** (does not start at login/reboot). **Turn On** starts remapping; **Quit & Stop Remapping** (or closing the menu) stops it — remapping does not keep running in the background after quit. Sleep/wake recovery stays in-process while the menu is open.
+Remapping is a root service the menu starts and stops. It stays **off across a full reboot** until you Turn On. After that it **keeps running through logout/login and sleep** (the menu is only UI; logging out does not stop the service). **Quit & Stop Remapping** is what actually stops it.
 
 Related: [homebrew](./homebrew.md) · [installation](./installation.md) · [prerequisite](./prerequisite.md)
 
@@ -41,7 +41,7 @@ open "/Applications/Keys Layer.app"
 | **Turn Off** | Stops remapping |
 | **Quit & Stop Remapping** | Quits the menu **and** stops the remapper (heartbeat) |
 | **Connected** | Lists **currently plugged-in** keyboards only (not your config allowlist). Toggle **Off** to mute that board completely. Writes `disabled_devices` — **no admin password**. `settings.devices` in config still controls which boards get remapped. |
-| **Launch Menu at Login** | Menu icon at login only — remaps stay off until you turn them on |
+| **Launch Menu at Login** | Menu icon comes back after login. Remapping itself stays up if you had turned it on (it does not depend on the menu staying open) |
 | **Open Config** / **Open Log** | `~/.config/keys-layer/config.toml` / `/var/log/keys-layer.log` |
 
 Disabling a keyboard writes `settings.devices` and restarts remapping so that board is released. Enabling adds it back to the allowlist.

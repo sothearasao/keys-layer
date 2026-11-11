@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  Menu-bar owned remapping:
-  - RunAtLoad=false → does NOT start at login/reboot (Turn On from the app)
-  - KeepAlive=false → when keys-layer exits (menu quit / heartbeat lost), stay off
-  - Process watches ~/.config/keys-layer/menu.heartbeat and exits if the menu is gone
+  Remapping service (root). The menu starts and stops this job.
+  - RunAtLoad=false → cold boot stays off until Turn On
+  - KeepAlive=true while the job is loaded → survives logout/login and sleep.
+    Logout kills the menu, not this daemon. Turn Off / Quit bootouts the job.
 -->
 <plist version="1.0">
 <dict>
@@ -18,7 +18,7 @@
   <key>RunAtLoad</key>
   <false/>
   <key>KeepAlive</key>
-  <false/>
+  <true/>
   <key>ThrottleInterval</key>
   <integer>10</integer>
   <key>StandardOutPath</key>

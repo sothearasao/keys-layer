@@ -129,7 +129,7 @@ ensure_ready() {
     exit 1
   fi
 
-  # Always refresh plist from template so upgrades pick up RunAtLoad/KeepAlive=false.
+  # Always refresh plist from template so upgrades pick up KeepAlive.
   local tmp
   tmp="$(mktemp)"
   sed \

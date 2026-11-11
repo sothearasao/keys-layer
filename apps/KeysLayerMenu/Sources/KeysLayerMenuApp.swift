@@ -240,13 +240,12 @@ final class MenuModel: ObservableObject {
   }
 
   func quit() {
-    // Drop heartbeat first so the remapper releases keyboards and exits
-    // without needing another admin prompt.
-    DaemonController.clearMenuHeartbeat()
+    // Logout just kills this UI; remapping is a system daemon and must keep
+    // running. Only an explicit Quit stops it.
     lastError = "Stopping remapping…"
+    busy = true
     Task.detached {
-      // Give the daemon a moment to notice; then force-off if still up.
-      try? await Task.sleep(nanoseconds: 2_500_000_000)
+      DaemonController.clearMenuHeartbeat()
       if DaemonController.statusOn() {
         try? DaemonController.setEnabled(false)
       }

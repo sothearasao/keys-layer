@@ -178,12 +178,33 @@ pub fn run(config_path: &Path) -> Result<(), String> {
     }
 
     let seize_patterns = seize_pattern_list(&device_patterns, &disabled_patterns);
-    let (seized, initial_hashes) = seize_devices(&seize_patterns)?;
+
+    // Logout/login restarts the VirtualHID *user* daemon after this system
+    // LaunchDaemon. Never seize keyboards until the sink is up, and never exit
+    // just because it is late — exiting left remapping dead until a manual Turn On.
+    let (seized, initial_hashes) = loop {
+        if !wait_for_sink(Duration::from_secs(5)) {
+            eprintln!(
+                "waiting for VirtualHID sink before seizing keyboards \
+                 (normal for a few seconds after login)…"
+            );
+            thread::sleep(Duration::from_secs(2));
+            continue;
+        }
+        match seize_devices(&seize_patterns) {
+            Ok(seized) => break seized,
+            Err(err) => {
+                eprintln!("{err} — retrying without holding the keyboard");
+                thread::sleep(Duration::from_secs(2));
+            }
+        }
+    };
     eprintln!("seized keyboards: {}", seized.join(", "));
     let seized_hashes = Arc::new(Mutex::new(initial_hashes));
     publish_connected_keyboards(config_path);
 
     if !grab() {
+        release();
         return Err(
             "grab failed — grant Input Monitoring + Accessibility to this binary, \
              run as root, and ensure no other remapper has an exclusive grab."
@@ -199,18 +220,13 @@ pub fn run(config_path: &Path) -> Result<(), String> {
     }
     let _guard = Guard;
 
-    // Physical keyboards are already seized here. If the virtual sink never
-    // comes up, release immediately so the Mac is not left without a keyboard.
-    if !wait_for_sink(Duration::from_secs(15)) {
+    if !is_sink_ready() {
+        eprintln!("sink dropped during grab — releasing and recovering in-process");
         release_input_only();
-        return Err(
-            "DriverKit virtual keyboard not ready (sink disconnected).\n\
-             Released physical keyboards so OS input works.\n\
-             Start Karabiner-VirtualHIDDevice-Daemon and retry."
-                .into(),
-        );
+        SINK_RECOVER.store(true, Ordering::SeqCst);
+    } else {
+        INPUT_SEIZED.store(true, Ordering::SeqCst);
     }
-    INPUT_SEIZED.store(true, Ordering::SeqCst);
 
     let engine_tick = Arc::clone(&engine);
     let started_tick = started;
@@ -225,7 +241,6 @@ pub fn run(config_path: &Path) -> Result<(), String> {
     });
 
     start_sink_watchdog();
-    start_menu_heartbeat_watch(config_path.to_path_buf());
     start_connected_publisher(config_path.to_path_buf());
     start_hotplug_watcher(
         Arc::clone(&devices),
@@ -726,47 +741,6 @@ fn start_connected_publisher(config_path: PathBuf) {
     thread::spawn(move || loop {
         publish_connected_keyboards(&config_path);
         thread::sleep(Duration::from_secs(5));
-    });
-}
-
-/// Exit when the menu bar app stops refreshing `menu.heartbeat` (quit / crash).
-/// Gives a short grace period after start so Turn On can finish.
-fn start_menu_heartbeat_watch(config_path: PathBuf) {
-    thread::spawn(move || {
-        let path = match config_path.parent() {
-            Some(dir) => dir.join("menu.heartbeat"),
-            None => return,
-        };
-        let started = Instant::now();
-        const GRACE: Duration = Duration::from_secs(45);
-        const MAX_AGE: u64 = 15;
-        loop {
-            thread::sleep(Duration::from_secs(2));
-            if started.elapsed() < GRACE {
-                continue;
-            }
-            let Ok(text) = fs::read_to_string(&path) else {
-                eprintln!(
-                    "menu heartbeat missing — releasing keyboards and exiting \
-                     (open Keys Layer and Turn On to remap again)"
-                );
-                release();
-                std::process::exit(0);
-            };
-            let ts: u64 = text.trim().parse().unwrap_or(0);
-            let now = SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0);
-            if now.saturating_sub(ts) > MAX_AGE {
-                eprintln!(
-                    "menu heartbeat stale ({MAX_AGE}s) — releasing keyboards and exiting \
-                     (menu quit or crashed)"
-                );
-                release();
-                std::process::exit(0);
-            }
-        }
     });
 }
 

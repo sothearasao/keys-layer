@@ -80,12 +80,21 @@ impl Engine {
     /// Returns KeyUp events for any outputs that were still held so the OS
     /// does not keep keys stuck across the reload.
     pub fn reload(&mut self, config: Config) -> Vec<OutputEvent> {
+        let released = self.release_all_held();
+        let base = config.settings.base_layer.clone();
+        self.config = config;
+        self.layer_stack = vec![base];
+        released
+    }
+
+    /// Drop every tracked key and layer. Used when the keyboard is released
+    /// (sleep, sink loss) so a long session cannot accumulate stuck modifiers.
+    pub fn release_all_held(&mut self) -> Vec<OutputEvent> {
         let mut out = Vec::new();
         for key in self.output_down.drain() {
             out.push(OutputEvent::KeyUp(key));
         }
-        let base = config.settings.base_layer.clone();
-        self.config = config;
+        let base = self.config.settings.base_layer.clone();
         self.layer_stack = vec![base];
         self.pending = None;
         self.active_holds.clear();

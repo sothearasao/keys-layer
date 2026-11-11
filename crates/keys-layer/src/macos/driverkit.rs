@@ -56,7 +56,7 @@ pub fn connected_keyboard_names() -> Result<Vec<String>, String> {
         );
     }
 
-    let all = fetch_devices();
+    let all = cached_hid_devices();
     if all.is_empty() {
         return Err(
             "no HID devices reported (is the VirtualHIDDevice daemon running?)".into(),
@@ -246,7 +246,6 @@ pub fn run(config_path: &Path) -> Result<(), String> {
         Arc::clone(&f_row_media_devices),
         Arc::clone(&f_row_media_hashes),
         Arc::clone(&seized_hashes),
-        config_path.to_path_buf(),
     );
 
     reload::start(
@@ -288,6 +287,11 @@ pub fn run(config_path: &Path) -> Result<(), String> {
                     (true, false) => "hotplug",
                     _ => "sink-loss",
                 };
+                let releases = {
+                    let mut eng = engine.lock().expect("engine lock");
+                    eng.release_all_held()
+                };
+                emit_outputs(&releases);
                 if let Err(err) = recover_input_after_release(ctx) {
                     // Stay in-process and retry — do not exit (menu owns lifecycle).
                     eprintln!("{err} — retrying (keyboards stay released until VirtualHID is stable)");
@@ -309,6 +313,11 @@ pub fn run(config_path: &Path) -> Result<(), String> {
         // Do NOT call is_sink_ready() on every key — Karabiner logs each check and
         // the IPC stalls typing (lag / stuck keys). The watchdog sets SINK_RECOVER.
         if SINK_RECOVER.load(Ordering::SeqCst) {
+            let releases = {
+                let mut eng = engine.lock().expect("engine lock");
+                eng.release_all_held()
+            };
+            emit_outputs(&releases);
             release_for_recovery(
                 "virtual keyboard sink lost — releasing physical keyboards \
                  so the Mac stays usable (will reseize when VirtualHID returns)",
@@ -507,6 +516,7 @@ fn start_sink_watchdog() {
         let mut last_wall = SystemTime::now();
         loop {
             thread::sleep(Duration::from_secs(1));
+            maybe_truncate_log();
             let now_wall = SystemTime::now();
             let wall_gap = now_wall
                 .duration_since(last_wall)
@@ -611,8 +621,63 @@ fn is_pointer_motion(page: u32, code: u32) -> bool {
         && matches!(code, 0x30 | 0x31 | 0x32 | 0x33 | 0x34 | 0x35 | 0x36 | 0x37 | 0x38 | 0x48)
 }
 
+/// `fetch_devices` in karabiner-driverkit leaks one IOKit port per keyboard
+/// on every call. Cache so a long session cannot drain the process port space
+/// (that is what eventually stalls HID and kills the keyboard).
+fn cached_hid_devices() -> Vec<karabiner_driverkit::DeviceData> {
+    struct Snap {
+        at: Instant,
+        rows: Vec<(String, u32, u32, u64)>,
+    }
+    fn rows_to_devices(rows: &[(String, u32, u32, u64)]) -> Vec<karabiner_driverkit::DeviceData> {
+        rows.iter()
+            .map(|(product_key, vendor_id, product_id, hash)| karabiner_driverkit::DeviceData {
+                product_key: product_key.clone(),
+                vendor_id: *vendor_id,
+                product_id: *product_id,
+                hash: *hash,
+            })
+            .collect()
+    }
+
+    static CACHE: Mutex<Option<Snap>> = Mutex::new(None);
+    const TTL: Duration = Duration::from_secs(30);
+
+    let mut guard = CACHE.lock().expect("hid cache");
+    if let Some(snap) = guard.as_ref() {
+        if snap.at.elapsed() < TTL {
+            return rows_to_devices(&snap.rows);
+        }
+    }
+    let fresh = fetch_devices();
+    *guard = Some(Snap {
+        at: Instant::now(),
+        rows: fresh
+            .iter()
+            .map(|d| (d.product_key.clone(), d.vendor_id, d.product_id, d.hash))
+            .collect(),
+    });
+    fresh
+}
+
+fn maybe_truncate_log() {
+    static LAST: Mutex<Option<Instant>> = Mutex::new(None);
+    let mut last = LAST.lock().expect("log truncate");
+    if last.is_some_and(|t| t.elapsed() < Duration::from_secs(60)) {
+        return;
+    }
+    *last = Some(Instant::now());
+    drop(last);
+    let path = "/var/log/keys-layer.log";
+    if fs::metadata(path).map(|m| m.len()).unwrap_or(0) > 2_000_000 {
+        if fs::write(path, "").is_ok() {
+            eprintln!("truncated /var/log/keys-layer.log (kept under 2MB)");
+        }
+    }
+}
+
 fn matching_devices(patterns: &[String]) -> Vec<karabiner_driverkit::DeviceData> {
-    let available = fetch_devices()
+    let available = cached_hid_devices()
         .into_iter()
         .filter(|d| !is_virtual_hid_name(&d.product_key))
         .filter(|d| !looks_like_pointer_peripheral(&d.product_key))
@@ -637,7 +702,7 @@ fn matching_devices(patterns: &[String]) -> Vec<karabiner_driverkit::DeviceData>
 /// Returns (human-readable names, device hashes registered).
 fn seize_devices(patterns: &[String]) -> Result<(Vec<String>, HashSet<u64>), String> {
     // One-shot log of pointer peripherals we refuse to seize.
-    for d in fetch_devices() {
+    for d in cached_hid_devices() {
         if !is_virtual_hid_name(&d.product_key) && looks_like_pointer_peripheral(&d.product_key) {
             eprintln!(
                 "skipping likely mouse/pointer (will not seize): {}",
@@ -648,7 +713,7 @@ fn seize_devices(patterns: &[String]) -> Result<(Vec<String>, HashSet<u64>), Str
 
     let matched = matching_devices(patterns);
     if matched.is_empty() {
-        let available = fetch_devices()
+        let available = cached_hid_devices()
             .into_iter()
             .filter(|d| !is_virtual_hid_name(&d.product_key))
             .collect::<Vec<_>>();
@@ -737,7 +802,9 @@ fn publish_connected_keyboards(config_path: &Path) {
 fn start_connected_publisher(config_path: PathBuf) {
     thread::spawn(move || loop {
         publish_connected_keyboards(&config_path);
-        thread::sleep(Duration::from_secs(5));
+        // karabiner-driverkit leaks one IOKit port per device on every
+        // fetch_devices() call. Keep this slow.
+        thread::sleep(Duration::from_secs(30));
     });
 }
 
@@ -749,7 +816,6 @@ fn start_hotplug_watcher(
     f_row_media_devices: Arc<Mutex<Vec<String>>>,
     f_row_media_hashes: Arc<Mutex<HashSet<u64>>>,
     seized_hashes: Arc<Mutex<HashSet<u64>>>,
-    config_path: PathBuf,
 ) {
     thread::spawn(move || {
         // Track by product name so hash churn / VirtualHID rebuilds do not loop.
@@ -763,7 +829,7 @@ fn start_hotplug_watcher(
         };
 
         loop {
-            thread::sleep(Duration::from_secs(2));
+            thread::sleep(Duration::from_secs(15));
 
             let remap = devices.lock().expect("devices lock").clone();
             let muted = disabled_devices.lock().expect("disabled lock").clone();
@@ -772,7 +838,6 @@ fn start_hotplug_watcher(
 
             *disabled_hashes.lock().expect("disabled hashes") =
                 device_hashes_matching(&muted);
-            publish_connected_keyboards(&config_path);
 
             let newcomers: Vec<(u64, String)> = matched
                 .iter()
@@ -780,8 +845,8 @@ fn start_hotplug_watcher(
                 .map(|d| (d.hash, d.product_key.clone()))
                 .collect();
             if newcomers.is_empty() {
-                // Keep hash set in sync for devices we already know by name.
                 let mut known = seized_hashes.lock().expect("seized lock");
+                known.clear();
                 for d in &matched {
                     known.insert(d.hash);
                 }

@@ -10,11 +10,11 @@
 class KeysLayer < Formula
   desc "Hold-to-layer keyboard remapper for macOS (Karabiner VirtualHID)"
   homepage "https://github.com/sothearasao/keys-layer"
-  # Stable snapshot of main (menu, live keyboards, sink starts before the ready wait).
+  # Stable snapshot of main (HID scan cache so long sessions do not leak ports).
   # v0.1.3 / v0.1.4 archives are missing keys-layer-emergency-stop.sh.
-  url "https://github.com/sothearasao/keys-layer/archive/636e44f85dc96dc0971197efe47bec6cf5a08e12.tar.gz"
-  sha256 "360c765e85adb185904d519f806ce2160bac708df69166e1c15b74c535494b64"
-  version "0.1.8"
+  url "https://github.com/sothearasao/keys-layer/archive/4dd4166f85e506d582e85dc1beadb1cd89712267.tar.gz"
+  sha256 "45ccb52d363faa29e49be49f6ad00245e17fa48799871f101cd759bfbf567431"
+  version "0.1.9"
   license "MIT"
   head "https://github.com/sothearasao/keys-layer.git", branch: "main"
 

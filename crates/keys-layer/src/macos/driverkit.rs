@@ -245,11 +245,12 @@ pub fn run(config_path: &Path) -> Result<(), String> {
     thread::spawn(move || loop {
         thread::sleep(Duration::from_millis(10));
         let now_ms = started_tick.elapsed().as_millis() as u64;
-        let outputs = {
-            let mut eng = engine_tick.lock().expect("engine lock");
-            eng.tick(now_ms)
-        };
+        // Emit while holding the engine lock so tick output cannot interleave
+        // with (or reorder against) events handled on the main thread.
+        let mut eng = engine_tick.lock().expect("engine lock");
+        let outputs = eng.tick(now_ms);
         emit_outputs(&outputs);
+        drop(eng);
     });
 
     start_sink_watchdog();
@@ -397,24 +398,21 @@ pub fn run(config_path: &Path) -> Result<(), String> {
             _ => continue,
         };
 
-        // Single lock: decide intercept + handle without racing the tick thread.
-        let outputs = {
+        // Single lock: decide intercept + handle + emit without racing the tick
+        // thread (send_key mutates a non-thread-safe key set in the driver).
+        {
             let mut eng = engine.lock().expect("engine lock");
             if !(eng.should_intercept(&key) || eng.is_native_disabled(&key)) {
-                None
+                passthrough(&mut event);
             } else {
                 // Physical Caps is seized — block OS toggle only when native=disable.
                 // With native=enable, a quick tap emits caps_lock (IOHID toggle below).
                 if key.as_str() == "caps_lock" && eng.is_native_disabled(&key) {
                     caps_lock::force_caps_lock_off();
                 }
-                Some(eng.handle(input, now_ms))
+                let outputs = eng.handle(input, now_ms);
+                emit_outputs(&outputs);
             }
-        };
-
-        match outputs {
-            None => passthrough(&mut event),
-            Some(outputs) => emit_outputs(&outputs),
         }
     }
 }
@@ -917,7 +915,11 @@ fn passthrough(event: &mut DKEvent) {
     emit_hid(event.page, event.code, event.value);
 }
 
+/// Serializes every `send_key` call (driver key sets are not thread-safe).
+static SEND_LOCK: Mutex<()> = Mutex::new(());
+
 fn emit_hid(page: u32, code: u32, value: u64) {
+    let _send = SEND_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let mut value = value;
     if value == VALUE_REPEAT {
         value = VALUE_PRESS;
@@ -940,6 +942,7 @@ fn emit_hid(page: u32, code: u32, value: u64) {
 }
 
 pub(super) fn emit_outputs(outputs: &[OutputEvent]) {
+    let _send = SEND_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     for out in outputs {
         let (name, value) = match out {
             OutputEvent::KeyDown(k) | OutputEvent::KeyRepeat(k) => (k, VALUE_PRESS),

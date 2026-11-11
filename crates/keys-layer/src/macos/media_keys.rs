@@ -37,16 +37,19 @@ fn refresh_fn_state_preference() {
     }
     FN_STATE_CHECKED_AT.store(now, Ordering::Relaxed);
 
-    let out = Command::new("defaults")
-        .args(["read", "-g", "com.apple.keyboard.fnState"])
-        .output();
-    let standard = out
-        .ok()
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .and_then(|s| s.trim().parse::<i32>().ok())
-        .map(|v| v != 0)
-        .unwrap_or(false);
-    FN_STATE_STANDARD.store(standard, Ordering::Relaxed);
+    // Never block the key event loop on a subprocess; update in the background.
+    std::thread::spawn(|| {
+        let out = Command::new("defaults")
+            .args(["read", "-g", "com.apple.keyboard.fnState"])
+            .output();
+        let standard = out
+            .ok()
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .and_then(|s| s.trim().parse::<i32>().ok())
+            .map(|v| v != 0)
+            .unwrap_or(false);
+        FN_STATE_STANDARD.store(standard, Ordering::Relaxed);
+    });
 }
 
 /// Whether an F1–F12 press should become a media key (vs a real function key).

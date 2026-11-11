@@ -14,11 +14,11 @@ brew trust sothearasao/keys-layer
 brew install sothearasao/keys-layer/keys-layer
 ```
 
-That installs the current stable formula (**0.1.9**: menu bar, live connected keyboards, HID scan cache so long sessions stay responsive). Homebrew builds the remapper + **Keys Layer.app**, then copies the app to:
+That installs the current stable formula (**0.1.10**: menu bar, live connected keyboards, HID scan cache so long sessions stay responsive). Homebrew builds the remapper + **Keys Layer.app**, then copies the app to:
 
 `/Applications/Keys Layer.app`
 
-For unreleased `main` after 0.1.9:
+For unreleased `main` after 0.1.10:
 
 ```bash
 brew install --HEAD sothearasao/keys-layer/keys-layer

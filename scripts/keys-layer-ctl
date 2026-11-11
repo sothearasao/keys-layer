@@ -193,6 +193,20 @@ session_denied_privacy() {
   ' "${log}" | grep -q "not permitted"
 }
 
+# A Karabiner VirtualHID daemon that has run for days can make every remapped
+# key laggy (remapping off = smooth). Restart it on "on" once it is >1 day old.
+refresh_stale_virtualhid() {
+  local pid etime
+  pid="$(pgrep -f 'Karabiner-VirtualHIDDevice-Daemon' | head -1)"
+  [[ -n "${pid}" ]] || return 0
+  etime="$(ps -o etime= -p "${pid}" 2>/dev/null | tr -d ' ')"
+  # etime looks like [[dd-]hh:]mm:ss — a dash means at least one day.
+  [[ "${etime}" == *-* ]] || return 0
+  echo "restarting stale VirtualHID daemon (up ${etime})" >&2
+  launchctl kickstart -k "system/org.pqrs.Karabiner-VirtualHIDDevice-Daemon" 2>/dev/null || true
+  sleep 2
+}
+
 wait_until_running() {
   local i
   for i in 1 2 3 4 5 6 7 8 9 10; do
@@ -215,6 +229,7 @@ cmd_on() {
       echo "truncated oversized /var/log/keys-layer.log" >&2
     fi
   fi
+  refresh_stale_virtualhid
   start_daemon
   if ! wait_until_running; then
     echo "warning: LaunchDaemon loaded but keys-layer process not seen yet" >&2

@@ -12,9 +12,9 @@ class KeysLayer < Formula
   homepage "https://github.com/sothearasao/keys-layer"
   # Stable snapshot of main (driver stdout silenced so the log no longer balloons; HID scan cache).
   # v0.1.3 / v0.1.4 archives are missing keys-layer-emergency-stop.sh.
-  url "https://github.com/sothearasao/keys-layer/archive/d9d5436b9b1473e7c717f80f324559c91d9c137a.tar.gz"
-  sha256 "9cf9e0845da994d1c53e52de3350610893f52ee7be40a2b61b6818cde94898c1"
-  version "0.1.10"
+  url "https://github.com/sothearasao/keys-layer/archive/0e766b314c57c25b4dc39d1f0014d6316a86c238.tar.gz"
+  sha256 "02d939d743dd459ce14eb5e17751b125901416af1abd21e30eecec1312bc8af0"
+  version "0.1.11"
   license "MIT"
   head "https://github.com/sothearasao/keys-layer.git", branch: "main"
 

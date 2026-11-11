@@ -120,9 +120,23 @@ fn list_devices_with_format(plain: bool) -> Result<(), String> {
     Ok(())
 }
 
+/// karabiner-driverkit prints `virtual_hid_keyboard_ready true` to stdout on every
+/// VirtualHID status push (~100k lines/day), which launchd appends to
+/// /var/log/keys-layer.log. Our own diagnostics use stderr, so send stdout to
+/// /dev/null for the daemon.
+fn silence_driver_stdout() {
+    use std::os::unix::io::AsRawFd;
+    if let Ok(null) = fs::OpenOptions::new().write(true).open("/dev/null") {
+        unsafe {
+            libc::dup2(null.as_raw_fd(), libc::STDOUT_FILENO);
+        }
+    }
+}
+
 /// Run the DriverKit remapper until the process exits (or grab fails).
 pub fn run(config_path: &Path) -> Result<(), String> {
     ensure_root()?;
+    silence_driver_stdout();
 
     if !driver_activated() {
         return Err(
@@ -920,7 +934,7 @@ fn emit_hid(page: u32, code: u32, value: u64) {
         release_for_recovery(
             "send_key: VirtualHID sink not ready — releasing keyboards for recovery",
         );
-    } else if rc == 1 {
+    } else if rc == 1 && code != 0xffff_ffff {
         eprintln!("warning: unrecognized HID page={page:#x} code={code:#x}");
     }
 }
